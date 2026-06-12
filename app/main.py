@@ -19,7 +19,7 @@ from app.telegram_auth import connect_authorized_client, create_client, load_cli
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
-CONFIG_PATH = Path(os.getenv("CONFIG_PATH", BASE_DIR / "config.yml"))
+CONFIG_PATH = Path(os.getenv("CONFIG_PATH", DATA_DIR / "config.json"))
 FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
 
 

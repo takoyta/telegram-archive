@@ -1,5 +1,6 @@
-data/
-config.yml
+data/*
+!data/
+!data/config.json
 *.session
 *.session-journal
 *.db

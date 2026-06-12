@@ -5,5 +5,4 @@ services:
       - "8085:8080"
     volumes:
       - ./data:/app/data
-      - ./config.yml:/app/config.yml:ro
     restart: on-failure

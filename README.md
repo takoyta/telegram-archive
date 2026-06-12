@@ -17,7 +17,6 @@
 ## Запуск через Docker
 
 ```bash
-cp config.example.yml config.yml
 docker-compose up --build
 ```
 
@@ -47,7 +46,6 @@ http://localhost:8085
 python -m venv .venv
 source .venv/Scripts/activate
 pip install -r requirements.txt
-cp config.example.yml config.yml
 python -m app.main
 ```
 
@@ -73,10 +71,15 @@ python -m app.auth
 
 ## Конфигурация
 
-```yaml
-sync:
-  photos: true
-  photo_size: original
+Настройки по умолчанию лежат в `data/config.json`:
+
+```json
+{
+  "sync": {
+    "photos": true,
+    "photo_size": "original"
+  }
+}
 ```
 
 ## API
