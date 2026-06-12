@@ -12,6 +12,7 @@ from app.db.queries import (
     mark_message_edited,
     mark_messages_deleted,
 )
+from app.events import EventBroker
 from app.sync.common import (
     contact_log_name,
     is_private_human_user,
@@ -26,6 +27,7 @@ def register_live_sync(
     db: Database,
     data_dir: Path,
     download_photos: bool,
+    broker: EventBroker,
 ) -> None:
     @client.on(events.NewMessage(func=lambda event: event.is_private))
     async def on_new(event: events.NewMessage.Event) -> None:
@@ -35,6 +37,11 @@ def register_live_sync(
 
         await save_private_chat(db, chat, client, data_dir)
         await save_message(client, db, event.message, chat.id, data_dir, download_photos)
+        await broker.publish(
+            "message_new",
+            chat_id=chat.id,
+            telegram_id=event.message.id,
+        )
         sender = await event.get_sender()
         sender_user = sender if isinstance(sender, User) else None
         print(
@@ -58,6 +65,11 @@ def register_live_sync(
             text=event.message.message or None,
             edit_date=edit_timestamp,
         )
+        await broker.publish(
+            "message_edited",
+            chat_id=chat.id,
+            telegram_id=event.message.id,
+        )
         sender = await event.get_sender()
         sender_user = sender if isinstance(sender, User) else None
         print(
@@ -71,6 +83,11 @@ def register_live_sync(
         deleted_at = int(time.time())
         entries = await get_message_log_entries(db, list(event.deleted_ids), chat_id)
         await mark_messages_deleted(db, list(event.deleted_ids), chat_id, deleted_at)
+        await broker.publish(
+            "message_deleted",
+            chat_id=chat_id,
+            telegram_ids=list(event.deleted_ids),
+        )
         deleted = format_deleted_messages(event.deleted_ids, entries)
         print(f"[Live] Deleted messages {deleted} at {format_log_time(deleted_at)}")
 

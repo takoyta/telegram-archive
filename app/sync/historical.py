@@ -13,6 +13,7 @@ from app.db.queries import (
     mark_chat_media_checked,
     mark_chat_synced,
 )
+from app.events import EventBroker
 from app.sync.common import (
     is_private_human_user,
     save_message,
@@ -26,12 +27,14 @@ async def run_historical_sync(
     db: Database,
     data_dir: Path,
     download_photos: bool,
+    events: EventBroker,
 ) -> None:
     started_at = time.monotonic()
     total_messages = 0
     total_media = 0
 
     print("[Sync] Historical sync started")
+    await events.publish("sync_started")
 
     async for dialog in client.iter_dialogs():
         if not dialog.is_user or not isinstance(dialog.entity, User):
@@ -51,6 +54,7 @@ async def run_historical_sync(
             user,
             data_dir,
             download_photos,
+            events,
         )
         total_messages += message_count
         total_media += media_count
@@ -61,6 +65,12 @@ async def run_historical_sync(
         f"{elapsed // 60}m {elapsed % 60}s "
         f"({total_messages} messages, {total_media} media)"
     )
+    await events.publish(
+        "sync_finished",
+        messages=total_messages,
+        media=total_media,
+        elapsed=elapsed,
+    )
 
 
 async def sync_dialog(
@@ -69,6 +79,7 @@ async def sync_dialog(
     user: User,
     data_dir: Path,
     download_photos: bool,
+    events: EventBroker,
 ) -> tuple[int, int]:
     await save_private_chat(db, user, client, data_dir)
 
@@ -82,6 +93,8 @@ async def sync_dialog(
 
     if backfill_media:
         print(f"[Sync] {title}: backfilling media...")
+
+    await events.publish("chat_sync_started", chat_id=chat_id, title=title)
 
     while True:
         try:
@@ -99,6 +112,13 @@ async def sync_dialog(
 
                 if message_count % 500 == 0:
                     print(f"[Sync] {title}: {message_count} messages...")
+                    await events.publish(
+                        "sync_progress",
+                        chat_id=chat_id,
+                        title=title,
+                        messages=message_count,
+                        media=media_count,
+                    )
 
             break
         except FloodWaitError as error:
@@ -110,4 +130,11 @@ async def sync_dialog(
 
     await mark_chat_synced(db, chat_id, int(time.time()))
     print(f"[Sync] {title}: done ({message_count} messages, {media_count} media)")
+    await events.publish(
+        "chat_synced",
+        chat_id=chat_id,
+        title=title,
+        messages=message_count,
+        media=media_count,
+    )
     return message_count, media_count

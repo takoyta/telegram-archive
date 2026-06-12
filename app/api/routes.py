@@ -3,6 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
+from starlette.responses import StreamingResponse
 from telethon.errors import (
     ApiIdInvalidError,
     ConnectionApiIdInvalidError,
@@ -16,6 +17,7 @@ from telethon.errors import (
 
 from app.db.connection import Database
 from app.db.queries import get_contact, list_chats, list_messages, search_messages
+from app.events import format_sse
 from app.sync.historical import run_historical_sync
 from app.sync.live import register_live_sync
 from app.telegram_auth import TelegramClientCredentials, create_client, save_client_credentials
@@ -89,6 +91,7 @@ async def start_sync_if_needed(request: Request) -> None:
                 app.state.db,
                 app.state.data_dir,
                 app.state.config.sync.photos,
+                app.state.events,
             )
         )
 
@@ -130,6 +133,7 @@ async def ensure_auth_client(
         app.state.db,
         app.state.data_dir,
         app.state.config.sync.photos,
+        app.state.events,
     )
     return credentials
 
@@ -137,6 +141,27 @@ async def ensure_auth_client(
 @router.get("/auth/status")
 async def auth_status(request: Request) -> dict[str, Any]:
     return await auth_response(request)
+
+
+@router.get("/events")
+async def events(request: Request) -> StreamingResponse:
+    async def stream():
+        async with request.app.state.events.subscribe() as queue:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                except TimeoutError:
+                    yield ": keep-alive\n\n"
+                    continue
+                yield format_sse(event)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/auth/send-code")

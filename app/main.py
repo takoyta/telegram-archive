@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routes import router
 from app.config import load_config
 from app.db.connection import Database
+from app.events import EventBroker
 from app.sync.common import repair_saved_media
 from app.sync.historical import run_historical_sync
 from app.sync.live import register_live_sync
@@ -25,6 +26,7 @@ FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config = load_config(CONFIG_PATH)
+    events = EventBroker()
     db = Database(DATA_DIR / "messages.db")
     await db.connect()
     await repair_saved_media(db, DATA_DIR)
@@ -34,16 +36,17 @@ async def lifespan(app: FastAPI):
     credentials = load_client_credentials(DATA_DIR)
     if credentials is not None:
         client = create_client(credentials, DATA_DIR)
-        register_live_sync(client, db, DATA_DIR, config.sync.photos)
+        register_live_sync(client, db, DATA_DIR, config.sync.photos, events)
         is_authorized = await connect_authorized_client(client, DATA_DIR)
         if is_authorized:
             sync_task = asyncio.create_task(
-                run_historical_sync(client, db, DATA_DIR, config.sync.photos)
+                run_historical_sync(client, db, DATA_DIR, config.sync.photos, events)
             )
 
     app.state.config = config
     app.state.data_dir = DATA_DIR
     app.state.db = db
+    app.state.events = events
     app.state.telegram_client = client
     app.state.sync_task = sync_task
     app.state.auth_phone = None
