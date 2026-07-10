@@ -16,7 +16,14 @@ from telethon.errors import (
 )
 
 from app.db.connection import Database
-from app.db.queries import get_contact, list_chats, list_messages, search_messages
+from app.db.queries import (
+    get_contact,
+    list_chat_media,
+    list_chats,
+    list_messages,
+    search_chat_messages,
+    search_messages,
+)
 from app.events import format_sse
 from app.sync.historical import run_historical_sync
 from app.sync.live import register_live_sync
@@ -264,6 +271,26 @@ async def messages(
     limit: int = Query(50, ge=1, le=200),
 ) -> list[dict[str, Any]]:
     return await list_messages(get_db(request), chat_id, offset, limit)
+
+
+@router.get("/chats/{chat_id}/search")
+async def chat_search(
+    request: Request,
+    chat_id: int,
+    q: str = Query(..., min_length=1),
+    limit: int = Query(50, ge=1, le=200),
+) -> list[dict[str, Any]]:
+    return await search_chat_messages(get_db(request), chat_id, q, limit)
+
+
+@router.get("/chats/{chat_id}/media")
+async def chat_media(
+    request: Request,
+    chat_id: int,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(60, ge=1, le=200),
+) -> list[dict[str, Any]]:
+    return await list_chat_media(get_db(request), chat_id, offset, limit)
 
 
 @router.get("/contacts/{contact_id}")

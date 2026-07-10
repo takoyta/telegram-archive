@@ -1,4 +1,4 @@
-import { scheduleChatsRefresh, scheduleMessagesRefresh } from "./chat.js";
+import { scheduleChatsRefresh, scheduleMediaRefresh, scheduleMessagesRefresh } from "./chat.js";
 import { dom } from "./dom.js";
 import { state } from "./state.js";
 
@@ -22,6 +22,7 @@ function handleArchiveEvent(event) {
     scheduleChatsRefresh(800);
     if (eventMatchesCurrentChat(event)) {
       scheduleMessagesRefresh(1000);
+      scheduleMediaRefresh(1000);
     }
     return;
   }
@@ -31,6 +32,7 @@ function handleArchiveEvent(event) {
     scheduleChatsRefresh();
     if (eventMatchesCurrentChat(event)) {
       scheduleMessagesRefresh();
+      scheduleMediaRefresh();
     }
     return;
   }
@@ -39,6 +41,7 @@ function handleArchiveEvent(event) {
     dom.statusEl.textContent = `Синхронизация завершена: ${event.messages} сообщений`;
     scheduleChatsRefresh();
     scheduleMessagesRefresh();
+    scheduleMediaRefresh();
     return;
   }
 
@@ -46,6 +49,7 @@ function handleArchiveEvent(event) {
     scheduleChatsRefresh();
     if (eventMatchesCurrentChat(event)) {
       scheduleMessagesRefresh(100);
+      scheduleMediaRefresh(100);
     }
     return;
   }
@@ -54,6 +58,7 @@ function handleArchiveEvent(event) {
     scheduleChatsRefresh();
     if (eventMatchesCurrentChat(event)) {
       scheduleMessagesRefresh(100);
+      scheduleMediaRefresh(100);
     }
   }
 }

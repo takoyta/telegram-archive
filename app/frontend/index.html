@@ -96,9 +96,6 @@
 
     <main class="app hidden" id="app">
       <aside class="sidebar">
-        <div class="toolbar">
-          <input id="search" type="search" placeholder="Поиск по архиву">
-        </div>
         <div id="chats"></div>
         <div class="event-log" id="status">Загрузка...</div>
       </aside>
@@ -108,8 +105,18 @@
             <div class="chat-title" id="title">Выберите чат</div>
             <div class="muted" id="subtitle"></div>
           </button>
+          <div class="message-search">
+            <input id="messageSearch" type="text" placeholder="Поиск по сообщениям" disabled autocomplete="off">
+            <button class="message-search-clear hidden" id="messageSearchClear" type="button" aria-label="Очистить">×</button>
+          </div>
         </div>
-        <div class="messages" id="messages"></div>
+        <div class="chat-panels">
+          <div class="messages" id="messages"></div>
+          <aside class="media-panel">
+            <div class="media-panel-header">Медиа</div>
+            <div class="media-panel-body" id="mediaPanel"></div>
+          </aside>
+        </div>
       </section>
     </main>
     <div class="contact-modal" id="contactModal" role="dialog" aria-modal="true" aria-label="Карточка пользователя">

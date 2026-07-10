@@ -359,6 +359,36 @@ async def get_contact(db: Database, contact_id: int) -> dict[str, Any] | None:
     return row_to_dict(row) if row is not None else None
 
 
+async def list_chat_media(
+    db: Database,
+    chat_id: int,
+    offset: int,
+    limit: int,
+) -> list[dict[str, Any]]:
+    rows = await db.fetchall(
+        """
+        SELECT
+            m.id,
+            m.telegram_id,
+            m.date,
+            COALESCE(m.media_path, m.photo_path) AS media_path,
+            m.media_type,
+            m.text,
+            c.first_name AS sender_first_name,
+            c.last_name AS sender_last_name,
+            c.username AS sender_username
+        FROM messages m
+        LEFT JOIN contacts c ON c.id = m.sender_id
+        WHERE m.chat_id = ?
+          AND COALESCE(m.media_path, m.photo_path) IS NOT NULL
+        ORDER BY m.date DESC, m.telegram_id DESC
+        LIMIT ? OFFSET ?
+        """,
+        (chat_id, limit, offset),
+    )
+    return [row_to_dict(row) for row in rows]
+
+
 async def list_messages(
     db: Database,
     chat_id: int,
@@ -383,6 +413,42 @@ async def list_messages(
         LIMIT ? OFFSET ?
         """,
         (chat_id, limit, offset),
+    )
+    messages = [row_to_dict(row) for row in rows]
+    histories = await get_message_edit_histories(db, [message["id"] for message in messages])
+    return attach_edit_histories(messages, histories)
+
+
+async def search_chat_messages(
+    db: Database,
+    chat_id: int,
+    query: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    fts_query = build_fts_query(query)
+    if not fts_query:
+        return []
+
+    rows = await db.fetchall(
+        """
+        SELECT
+            m.*,
+            CASE
+                WHEN m.sender_id IS NOT NULL AND m.sender_id != m.chat_id THEN 1
+                ELSE 0
+            END AS is_outgoing,
+            c.first_name AS sender_first_name,
+            c.last_name AS sender_last_name,
+            c.username AS sender_username
+        FROM messages_fts
+        JOIN messages m ON m.id = messages_fts.rowid
+        LEFT JOIN contacts c ON c.id = m.sender_id
+        WHERE messages_fts MATCH ?
+          AND m.chat_id = ?
+        ORDER BY bm25(messages_fts), m.date DESC
+        LIMIT ?
+        """,
+        (fts_query, chat_id, limit),
     )
     messages = [row_to_dict(row) for row in rows]
     histories = await get_message_edit_histories(db, [message["id"] for message in messages])
@@ -427,4 +493,4 @@ async def search_messages(
 
 def build_fts_query(query: str) -> str:
     terms = re.findall(r"[\wА-Яа-яЁё]+", query, flags=re.UNICODE)
-    return " ".join(f'"{term}"' for term in terms)
+    return " ".join(f"{term}*" for term in terms)

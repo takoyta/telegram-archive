@@ -132,9 +132,11 @@ export function renderChats() {
 function appendMessageMedia(bubble, message) {
   const path = message.media_path || message.photo_path;
   if (!path) return;
+  bubble.append(createInlineMedia(path, message.media_type || "image"));
+}
 
+function createInlineMedia(path, type) {
   const url = mediaUrl(path);
-  const type = message.media_type || "image";
 
   if (type === "audio") {
     const audio = document.createElement("audio");
@@ -142,8 +144,7 @@ function appendMessageMedia(bubble, message) {
     audio.controls = true;
     audio.preload = "metadata";
     audio.src = url;
-    bubble.append(audio);
-    return;
+    return audio;
   }
 
   if (type === "video") {
@@ -152,8 +153,7 @@ function appendMessageMedia(bubble, message) {
     video.controls = true;
     video.preload = "metadata";
     video.src = url;
-    bubble.append(video);
-    return;
+    return video;
   }
 
   const link = document.createElement("a");
@@ -168,7 +168,137 @@ function appendMessageMedia(bubble, message) {
   image.loading = "lazy";
   image.src = url;
   link.append(image);
-  bubble.append(link);
+  return link;
+}
+
+function mediaCaption(item) {
+  return [senderName(item), formatTime(item.date)].filter(Boolean).join(" · ");
+}
+
+function createGalleryItem(item) {
+  const path = item.media_path;
+  const type = item.media_type || "image";
+  const url = mediaUrl(path);
+  const element = document.createElement("article");
+  element.className = `media-item media-item-${type}`;
+
+  if (type === "audio") {
+    const audio = document.createElement("audio");
+    audio.className = "media-gallery-audio";
+    audio.controls = true;
+    audio.preload = "metadata";
+    audio.src = url;
+    element.append(audio);
+  } else if (type === "video") {
+    const video = document.createElement("video");
+    video.className = "media-gallery-video";
+    video.controls = true;
+    video.preload = "metadata";
+    video.src = url;
+    element.append(video);
+  } else {
+    const button = document.createElement("button");
+    const image = document.createElement("img");
+    button.type = "button";
+    button.className = "media-gallery-image";
+    image.loading = "lazy";
+    image.src = url;
+    image.alt = "";
+    button.addEventListener("click", () => openLightbox(url));
+    button.append(image);
+    element.append(button);
+  }
+
+  const caption = document.createElement("div");
+  caption.className = "media-item-caption";
+  caption.textContent = mediaCaption(item);
+  element.append(caption);
+  return element;
+}
+
+function mediaSectionMeta(type) {
+  if (type === "video") return { title: "Видео", layout: "list" };
+  if (type === "audio") return { title: "Аудио", layout: "list" };
+  return { title: "Фото", layout: "grid" };
+}
+
+function findMediaSection(title) {
+  return [...dom.mediaPanelEl.querySelectorAll(".media-section")].find(section => {
+    return section.querySelector(".media-section-title")?.textContent?.startsWith(title);
+  });
+}
+
+function updateMediaSectionTitle(section, title) {
+  const count = section.querySelector(".media-grid, .media-list")?.childElementCount || 0;
+  const heading = section.querySelector(".media-section-title");
+  if (heading) heading.textContent = `${title} · ${count}`;
+}
+
+function appendMediaSection(type, items) {
+  if (items.length === 0) return;
+
+  const { title, layout } = mediaSectionMeta(type);
+  let section = findMediaSection(title);
+
+  if (!section) {
+    section = document.createElement("section");
+    section.className = "media-section";
+    const heading = document.createElement("div");
+    heading.className = "media-section-title";
+    const body = document.createElement("div");
+    body.className = layout === "grid" ? "media-grid" : "media-list";
+    section.append(heading, body);
+    dom.mediaPanelEl.append(section);
+  }
+
+  const body = section.querySelector(".media-grid, .media-list");
+  for (const item of items) {
+    body.append(createGalleryItem(item));
+  }
+  updateMediaSectionTitle(section, title);
+}
+
+export function renderMediaPanel(items, options = {}) {
+  if (options.reset) {
+    dom.mediaPanelEl.innerHTML = "";
+  }
+
+  dom.mediaPanelEl.querySelector(".media-panel-status")?.remove();
+  dom.mediaPanelEl.querySelector(".media-panel-empty")?.remove();
+
+  if (items.length === 0 && options.reset) {
+    const empty = document.createElement("div");
+    empty.className = "media-panel-empty";
+    empty.textContent = "Медиа нет";
+    dom.mediaPanelEl.append(empty);
+    return;
+  }
+
+  const images = items.filter(item => (item.media_type || "image") === "image");
+  const videos = items.filter(item => item.media_type === "video");
+  const audios = items.filter(item => item.media_type === "audio");
+
+  appendMediaSection("image", images);
+  appendMediaSection("video", videos);
+  appendMediaSection("audio", audios);
+}
+
+export function renderMediaStatus(text) {
+  dom.mediaPanelEl.querySelector(".media-panel-status")?.remove();
+  if (!text) return;
+  const status = document.createElement("div");
+  status.className = "media-panel-status";
+  status.textContent = text;
+  dom.mediaPanelEl.append(status);
+}
+
+export function clearMediaPanel(message = "Выберите чат") {
+  dom.mediaPanelEl.innerHTML = "";
+  if (!message) return;
+  const empty = document.createElement("div");
+  empty.className = "media-panel-empty";
+  empty.textContent = message;
+  dom.mediaPanelEl.append(empty);
 }
 
 function editMeta(message) {
@@ -262,12 +392,16 @@ function createMessageElement(message) {
   return row;
 }
 
-function historyText() {
+function historyText(options = {}) {
+  if (options.searchMode) return "";
   if (!state.chatId) return "";
   return state.hasMore ? "Прокрутите выше для истории" : "Начало истории";
 }
 
-export function renderHistoryStatus(text = historyText()) {
+export function renderHistoryStatus(text, options = {}) {
+  if (text === undefined) {
+    text = historyText(options);
+  }
   dom.messagesEl.querySelector(".history-status")?.remove();
   if (!text) return;
   const status = document.createElement("div");
@@ -299,9 +433,9 @@ export function renderMessages(messages, options = {}) {
   if (options.reset && messages.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "Сообщений нет";
+    empty.textContent = options.searchMode ? "Ничего не найдено" : "Сообщений нет";
     dom.messagesEl.append(empty);
   }
 
-  renderHistoryStatus();
+  renderHistoryStatus(undefined, options);
 }

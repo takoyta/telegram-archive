@@ -1,11 +1,12 @@
 import { checkAuth, sendCode, sendPassword, showAuth, signIn } from "./auth.js";
-import { loadMore, search, selectChat } from "./chat.js";
+import { clearMessageSearch, loadMore, loadMoreMedia, searchChatMessages, selectChat } from "./chat.js";
 import { dom } from "./dom.js";
 import {
   closeContactCard,
   closeLightbox,
   openContactCard,
   renderHistoryStatus,
+  renderMediaStatus,
   setOnSelectChat
 } from "./render.js";
 import { state } from "./state.js";
@@ -16,6 +17,15 @@ dom.messagesEl.addEventListener("scroll", () => {
   if (dom.messagesEl.scrollTop < 120) {
     loadMore().catch(error => {
       renderHistoryStatus(error.message);
+    });
+  }
+});
+
+dom.mediaPanelEl.addEventListener("scroll", () => {
+  const distance = dom.mediaPanelEl.scrollHeight - dom.mediaPanelEl.scrollTop - dom.mediaPanelEl.clientHeight;
+  if (distance < 120) {
+    loadMoreMedia().catch(error => {
+      renderMediaStatus(error.message);
     });
   }
 });
@@ -47,9 +57,17 @@ document.addEventListener("keydown", event => {
   }
 });
 
-dom.searchEl.addEventListener("input", () => {
+dom.messageSearchEl.addEventListener("input", () => {
   clearTimeout(state.searchTimer);
-  state.searchTimer = setTimeout(() => search(dom.searchEl.value), 250);
+  state.searchTimer = setTimeout(() => searchChatMessages(dom.messageSearchEl.value), 250);
+});
+
+dom.messageSearchClearEl.addEventListener("click", clearMessageSearch);
+
+dom.messageSearchEl.addEventListener("keydown", event => {
+  if (event.key === "Escape") {
+    clearMessageSearch();
+  }
 });
 
 dom.authFormEl.addEventListener("submit", event => {

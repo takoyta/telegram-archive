@@ -1,13 +1,17 @@
 export const state = {
   chats: [],
   chatId: null,
-  searchReturnChatId: null,
   offset: 0,
   limit: 50,
   hasMore: false,
   isLoadingMessages: false,
+  mediaOffset: 0,
+  mediaLimit: 60,
+  hasMoreMedia: false,
+  isLoadingMedia: false,
   searchTimer: null,
   chatsRefreshTimer: null,
   messagesRefreshTimer: null,
+  mediaRefreshTimer: null,
   eventsSource: null
 };
