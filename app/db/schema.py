@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS contacts (
     username TEXT,
     phone TEXT,
     about TEXT,
+    birthday TEXT,
     avatar_path TEXT,
     avatar_photo_id INTEGER,
     access_hash INTEGER,
@@ -98,4 +99,19 @@ CREATE TABLE IF NOT EXISTS message_edits (
 
 CREATE INDEX IF NOT EXISTS idx_message_edits_message_edited
 ON message_edits(message_id, edited_at);
+
+CREATE TABLE IF NOT EXISTS avatars (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    contact_id INTEGER NOT NULL,
+    photo_id INTEGER NOT NULL,
+    path TEXT NOT NULL,
+    date INTEGER,
+    is_current INTEGER DEFAULT 0,
+    created_at INTEGER,
+    UNIQUE(contact_id, photo_id),
+    FOREIGN KEY (contact_id) REFERENCES contacts(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_avatars_contact_date
+ON avatars(contact_id, date DESC, id DESC);
 """

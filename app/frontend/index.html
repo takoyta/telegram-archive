@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-ta-app="telegram-archiver">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,15 +7,19 @@
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
-    <div class="boot-screen" id="boot" aria-live="polite">
+    <div class="boot-screen" id="boot" data-ta-role="boot" aria-live="polite">
       <div class="boot-card">
         <div class="boot-spinner" aria-hidden="true"></div>
         <div class="boot-text">Загрузка архива...</div>
+        <div class="boot-version" id="bootVersion">v0.2.8</div>
       </div>
     </div>
-    <section class="auth-screen hidden" id="auth">
+    <section class="auth-screen hidden" id="auth" data-ta-role="auth">
       <form class="auth-card" id="authForm">
-        <h1>Вход в Telegram</h1>
+        <div class="auth-card-header">
+          <h1>Вход в Telegram</h1>
+          <span class="version-badge" id="authVersion">v0.2.8</span>
+        </div>
         <p id="authText">Подключите Telegram-аккаунт, чтобы начать синхронизацию архива.</p>
         <div class="auth-help">
           Откройте <a href="https://my.telegram.org/apps" target="_blank" rel="noreferrer">my.telegram.org/apps</a>,
@@ -94,13 +98,27 @@
       </form>
     </section>
 
-    <main class="app hidden" id="app">
-      <aside class="sidebar">
-        <div id="chats"></div>
-        <div class="event-log" id="status">Загрузка...</div>
+    <div id="ta-export" hidden data-ta-role="export" data-ta-ready="0" data-ta-authorized="0"></div>
+    <script type="application/json" id="ta-export-json">{}</script>
+
+    <main class="app hidden" id="app" data-ta-role="app">
+      <aside class="sidebar" id="sidebar" data-ta-role="sidebar">
+        <div class="sidebar-header">
+          <div class="sidebar-header-text">
+            <div class="sidebar-brand">Telegram Archiver</div>
+            <div class="sidebar-account" id="account" data-ta-role="account" hidden></div>
+          </div>
+          <span class="version-badge" id="appVersion">v0.2.8</span>
+        </div>
+        <div class="chat-search">
+          <input id="chatSearch" type="text" placeholder="Поиск контактов" autocomplete="off">
+          <button class="chat-search-clear hidden" id="chatSearchClear" type="button" aria-label="Очистить">×</button>
+        </div>
+        <div id="chats" data-ta-role="chats"></div>
+        <div class="event-log" id="status" data-ta-role="status">Загрузка...</div>
       </aside>
-      <section class="content">
-        <div class="header">
+      <section class="content" id="chatView" data-ta-role="chat-view">
+        <div class="header" data-ta-role="chat-header">
           <button class="contact-button" id="contactButton" type="button" disabled>
             <div class="chat-title" id="title">Выберите чат</div>
             <div class="muted" id="subtitle"></div>
@@ -111,15 +129,15 @@
           </div>
         </div>
         <div class="chat-panels">
-          <div class="messages" id="messages"></div>
-          <aside class="media-panel">
+          <div class="messages" id="messages" data-ta-role="messages"></div>
+          <aside class="media-panel" id="mediaPanelWrap" data-ta-role="media-panel">
             <div class="media-panel-header">Медиа</div>
             <div class="media-panel-body" id="mediaPanel"></div>
           </aside>
         </div>
       </section>
     </main>
-    <div class="contact-modal" id="contactModal" role="dialog" aria-modal="true" aria-label="Карточка пользователя">
+    <div class="contact-modal" id="contactModal" data-ta-role="contact-modal" role="dialog" aria-modal="true" aria-label="Карточка пользователя">
       <div class="contact-card">
         <div class="profile-head">
           <div class="profile-avatar" id="contactAvatar"></div>
@@ -129,12 +147,30 @@
           </div>
           <button class="profile-close" id="contactClose" type="button" aria-label="Закрыть">×</button>
         </div>
+        <div class="profile-avatars" id="profileAvatars">
+          <div class="profile-avatars-header">
+            <div class="profile-avatars-title">
+              <span>Аватары</span>
+              <span class="avatars-count" id="contactAvatarsCount">0</span>
+            </div>
+            <button class="avatars-sync-button" id="syncAvatarsButton" type="button">
+              <span class="sync-icon">↻</span>
+              <span class="sync-text">Загрузить с Telegram</span>
+            </button>
+          </div>
+          <div class="profile-avatars-gallery" id="contactAvatarsGallery"></div>
+        </div>
         <div class="profile-body" id="contactBody"></div>
       </div>
     </div>
     <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Просмотр изображения">
       <button class="lightbox-close" id="lightboxClose" type="button" aria-label="Закрыть">×</button>
-      <img id="lightboxImage" alt="">
+      <button class="lightbox-nav lightbox-prev hidden" id="lightboxPrev" type="button" aria-label="Предыдущее">‹</button>
+      <div class="lightbox-content">
+        <img id="lightboxImage" alt="">
+        <div class="lightbox-caption" id="lightboxCaption"></div>
+      </div>
+      <button class="lightbox-nav lightbox-next hidden" id="lightboxNext" type="button" aria-label="Следующее">›</button>
     </div>
 
     <script type="module" src="./main.js"></script>

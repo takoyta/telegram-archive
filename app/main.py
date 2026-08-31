@@ -15,12 +15,16 @@ from app.sync.common import repair_saved_media
 from app.sync.historical import run_historical_sync
 from app.sync.live import register_live_sync
 from app.telegram_auth import connect_authorized_client, create_client, load_client_credentials
+from app.version import __version__
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
 CONFIG_PATH = Path(os.getenv("CONFIG_PATH", DATA_DIR / "config.json"))
 FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", "8080"))
+PUBLIC_PORT = int(os.getenv("PUBLIC_PORT", str(PORT)))
 
 
 @asynccontextmanager
@@ -53,6 +57,10 @@ async def lifespan(app: FastAPI):
     app.state.auth_phone_code_hash = None
     app.state.sync_lock = asyncio.Lock()
 
+    print(f"Telegram Archiver v{__version__}")
+    print(f"Listening on http://{HOST}:{PORT}")
+    print(f"Open http://127.0.0.1:{PUBLIC_PORT}")
+
     try:
         yield
     finally:
@@ -72,4 +80,4 @@ app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8080)
+    uvicorn.run("app.main:app", host=HOST, port=PORT)

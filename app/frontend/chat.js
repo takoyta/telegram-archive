@@ -1,10 +1,14 @@
 import { fetchJson } from "./api.js";
 import { dom } from "./dom.js";
+import { setExportChat } from "./exportContext.js";
 import {
   clearMediaPanel,
   closeContactCard,
   renderChats,
+  renderContactAvatars,
+  renderContactCard,
   renderHistoryStatus,
+  renderMediaAvatars,
   renderMediaPanel,
   renderMediaStatus,
   renderMessages
@@ -171,6 +175,7 @@ export async function selectChat(chatId) {
   setMessageSearchEnabled(true);
 
   const chat = state.chats.find(item => item.id === chatId);
+  setExportChat(chat || { id: chatId, title: "", username: "" });
   dom.titleEl.textContent = chat?.title || String(chatId);
   dom.subtitleEl.textContent = chat ? `${chat.message_count || 0} сообщений` : "";
   dom.contactButtonEl.disabled = !chat;
@@ -180,23 +185,53 @@ export async function selectChat(chatId) {
   renderMediaStatus("Загрузка...");
 
   try {
-    const [messages, media] = await Promise.all([
+    const [messages, media, avatars] = await Promise.all([
       fetchJson(`/api/chats/${chatId}/messages?limit=${state.limit}`),
-      fetchJson(`/api/chats/${chatId}/media?limit=${state.mediaLimit}`)
+      fetchJson(`/api/chats/${chatId}/media?limit=${state.mediaLimit}`),
+      fetchJson(`/api/contacts/${chatId}/avatars`).catch(() => [])
     ]);
     if (state.chatId !== chatId) return;
     state.offset = messages.length;
     state.hasMore = messages.length === state.limit;
     state.mediaOffset = media.length;
     state.hasMoreMedia = media.length === state.mediaLimit;
+    state.avatars = avatars || [];
     renderMessages(messages, { reset: true });
     renderMediaPanel(media, { reset: true });
+    renderMediaAvatars(state.avatars);
     requestAnimationFrame(() => {
       dom.messagesEl.scrollTop = dom.messagesEl.scrollHeight;
     });
   } finally {
     state.isLoadingMessages = false;
     state.isLoadingMedia = false;
+  }
+}
+
+export async function syncCurrentContactAvatars() {
+  if (!state.chatId || state.isLoadingAvatars) return;
+  state.isLoadingAvatars = true;
+  dom.syncAvatarsButtonEl.disabled = true;
+  dom.syncAvatarsButtonEl.classList.add("loading");
+  const text = dom.syncAvatarsButtonEl.querySelector(".sync-text");
+  if (text) text.textContent = "Загрузка...";
+
+  try {
+    const avatars = await fetchJson(`/api/contacts/${state.chatId}/avatars/sync`, {
+      method: "POST"
+    });
+    renderContactAvatars(avatars);
+    renderMediaAvatars(avatars);
+    const contact = await fetchJson(`/api/contacts/${state.chatId}`);
+    renderContactCard(contact);
+    await loadChats();
+  } catch (error) {
+    alert("Ошибка загрузки аватаров: " + error.message);
+  } finally {
+    state.isLoadingAvatars = false;
+    dom.syncAvatarsButtonEl.disabled = false;
+    dom.syncAvatarsButtonEl.classList.remove("loading");
+    if (text) text.textContent = "Загрузить с Telegram";
   }
 }
 

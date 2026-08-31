@@ -1,10 +1,20 @@
 import { checkAuth, sendCode, sendPassword, showAuth, signIn } from "./auth.js";
-import { clearMessageSearch, loadMore, loadMoreMedia, searchChatMessages, selectChat } from "./chat.js";
+import {
+  clearMessageSearch,
+  loadMore,
+  loadMoreMedia,
+  searchChatMessages,
+  selectChat,
+  syncCurrentContactAvatars
+} from "./chat.js";
 import { dom } from "./dom.js";
 import {
   closeContactCard,
   closeLightbox,
+  nextLightbox,
   openContactCard,
+  prevLightbox,
+  renderChats,
   renderHistoryStatus,
   renderMediaStatus,
   setOnSelectChat
@@ -31,10 +41,22 @@ dom.mediaPanelEl.addEventListener("scroll", () => {
 });
 
 dom.lightboxCloseEl.addEventListener("click", closeLightbox);
+dom.lightboxPrevEl.addEventListener("click", event => {
+  event.stopPropagation();
+  prevLightbox();
+});
+dom.lightboxNextEl.addEventListener("click", event => {
+  event.stopPropagation();
+  nextLightbox();
+});
 dom.lightboxEl.addEventListener("click", event => {
   if (event.target === dom.lightboxEl) {
     closeLightbox();
   }
+});
+
+dom.syncAvatarsButtonEl.addEventListener("click", () => {
+  syncCurrentContactAvatars();
 });
 
 dom.contactButtonEl.addEventListener("click", () => {
@@ -54,6 +76,37 @@ document.addEventListener("keydown", event => {
   if (event.key === "Escape") {
     closeLightbox();
     closeContactCard();
+  } else if (event.key === "ArrowLeft") {
+    if (dom.lightboxEl.classList.contains("open")) {
+      prevLightbox();
+    }
+  } else if (event.key === "ArrowRight") {
+    if (dom.lightboxEl.classList.contains("open")) {
+      nextLightbox();
+    }
+  }
+});
+
+function clearChatSearch() {
+  dom.chatSearchEl.value = "";
+  renderChats();
+}
+
+dom.chatSearchEl.addEventListener("input", () => {
+  renderChats();
+});
+
+dom.chatSearchClearEl.addEventListener("click", () => {
+  clearChatSearch();
+  dom.chatSearchEl.focus();
+});
+
+dom.chatSearchEl.addEventListener("keydown", event => {
+  if (event.key === "Escape") {
+    clearChatSearch();
+  }
+  if (event.key === "Enter") {
+    event.preventDefault();
   }
 });
 

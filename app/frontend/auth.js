@@ -2,13 +2,23 @@ import { fetchJson } from "./api.js";
 import { loadChats } from "./chat.js";
 import { dom } from "./dom.js";
 import { connectEvents } from "./events.js";
+import { setExportAuth } from "./exportContext.js";
+
+export function updateAppVersion(version) {
+  if (!version) return;
+  const displayVersion = version.startsWith("v") ? version : `v${version}`;
+  if (dom.authVersionEl) dom.authVersionEl.textContent = displayVersion;
+  if (dom.appVersionEl) dom.appVersionEl.textContent = displayVersion;
+  if (dom.bootVersionEl) dom.bootVersionEl.textContent = displayVersion;
+}
 
 function finishBoot() {
   dom.bootEl.classList.add("hidden");
 }
 
-export function showAuth(message = "") {
+export function showAuth(message = "", auth) {
   finishBoot();
+  setExportAuth(auth ? { ...auth, authorized: false } : { authorized: false });
   dom.authEl.classList.remove("hidden");
   dom.appEl.classList.add("hidden");
   dom.authStatusEl.textContent = message;
@@ -16,11 +26,12 @@ export function showAuth(message = "") {
 
 export function showApp(auth) {
   finishBoot();
+  if (auth?.version) {
+    updateAppVersion(auth.version);
+  }
+  setExportAuth(auth);
   dom.authEl.classList.add("hidden");
   dom.appEl.classList.remove("hidden");
-  if (auth?.user) {
-    dom.statusEl.textContent = `Аккаунт: ${auth.user.first_name || auth.user.username || auth.user.id}`;
-  }
   connectEvents();
 }
 
@@ -33,13 +44,16 @@ function setAuthStepNumbers(clientConfigured) {
 
 export async function checkAuth() {
   const auth = await fetchJson("/api/auth/status");
+  if (auth?.version) {
+    updateAppVersion(auth.version);
+  }
   if (!auth.authorized) {
     dom.clientStepEl.classList.toggle("hidden", Boolean(auth.client_configured));
     setAuthStepNumbers(Boolean(auth.client_configured));
     dom.authTextEl.textContent = auth.client_configured
       ? "Введите номер телефона и подтвердите вход кодом из Telegram."
       : "Заполните шаги ниже, чтобы подключить аккаунт.";
-    showAuth("Аккаунт еще не подключен");
+    showAuth("Аккаунт еще не подключен", auth);
     return;
   }
 

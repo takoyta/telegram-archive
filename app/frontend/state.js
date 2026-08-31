@@ -13,5 +13,9 @@ export const state = {
   chatsRefreshTimer: null,
   messagesRefreshTimer: null,
   mediaRefreshTimer: null,
-  eventsSource: null
+  eventsSource: null,
+  avatars: [],
+  isLoadingAvatars: false,
+  lightboxGallery: [],
+  lightboxIndex: -1
 };

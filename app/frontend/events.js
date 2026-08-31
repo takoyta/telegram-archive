@@ -1,5 +1,6 @@
 import { scheduleChatsRefresh, scheduleMediaRefresh, scheduleMessagesRefresh } from "./chat.js";
 import { dom } from "./dom.js";
+import { setExportSyncRunning } from "./exportContext.js";
 import { state } from "./state.js";
 
 function eventChatId(event) {
@@ -12,6 +13,7 @@ function eventMatchesCurrentChat(event) {
 
 function handleArchiveEvent(event) {
   if (event.type === "sync_started") {
+    setExportSyncRunning(true);
     dom.statusEl.textContent = "Синхронизация запущена";
     scheduleChatsRefresh();
     return;
@@ -38,6 +40,7 @@ function handleArchiveEvent(event) {
   }
 
   if (event.type === "sync_finished") {
+    setExportSyncRunning(false);
     dom.statusEl.textContent = `Синхронизация завершена: ${event.messages} сообщений`;
     scheduleChatsRefresh();
     scheduleMessagesRefresh();

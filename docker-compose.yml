@@ -3,6 +3,8 @@ services:
     build: .
     ports:
       - "8085:8080"
+    environment:
+      PUBLIC_PORT: "8085"
     volumes:
       - ./data:/app/data
     restart: on-failure

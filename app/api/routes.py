@@ -20,14 +20,17 @@ from app.db.queries import (
     get_contact,
     list_chat_media,
     list_chats,
+    list_contact_avatars,
     list_messages,
     search_chat_messages,
     search_messages,
 )
 from app.events import format_sse
+from app.sync.common import sync_user_avatars
 from app.sync.historical import run_historical_sync
 from app.sync.live import register_live_sync
 from app.telegram_auth import TelegramClientCredentials, create_client, save_client_credentials
+from app.version import __version__
 
 
 router = APIRouter(prefix="/api")
@@ -74,6 +77,7 @@ async def auth_response(request: Request) -> dict[str, Any]:
             "first_name": me.first_name,
             "last_name": me.last_name,
             "username": me.username,
+            "phone": me.phone,
         }
 
     return {
@@ -82,6 +86,7 @@ async def auth_response(request: Request) -> dict[str, Any]:
         "user": user,
         "sync_running": request.app.state.sync_task is not None
         and not request.app.state.sync_task.done(),
+        "version": __version__,
     }
 
 
@@ -143,6 +148,11 @@ async def ensure_auth_client(
         app.state.events,
     )
     return credentials
+
+
+@router.get("/version")
+async def get_version() -> dict[str, str]:
+    return {"version": __version__}
 
 
 @router.get("/auth/status")
@@ -299,6 +309,28 @@ async def contact(request: Request, contact_id: int) -> dict[str, Any]:
     if result is None:
         raise HTTPException(status_code=404, detail="Contact not found")
     return result
+
+
+@router.get("/contacts/{contact_id}/avatars")
+async def contact_avatars(request: Request, contact_id: int) -> list[dict[str, Any]]:
+    return await list_contact_avatars(get_db(request), contact_id)
+
+
+@router.post("/contacts/{contact_id}/avatars/sync")
+async def sync_avatars(request: Request, contact_id: int) -> list[dict[str, Any]]:
+    client = request.app.state.telegram_client
+    if client is None:
+        raise HTTPException(status_code=400, detail="Telegram client is not configured")
+    await ensure_client_connected(request)
+    if not await client.is_user_authorized():
+        raise HTTPException(status_code=401, detail="Telegram client is not authorized")
+
+    return await sync_user_avatars(
+        client,
+        get_db(request),
+        contact_id,
+        request.app.state.data_dir,
+    )
 
 
 @router.get("/search")

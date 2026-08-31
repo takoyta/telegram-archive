@@ -64,6 +64,7 @@ class Database:
     async def migrate(self) -> None:
         contact_columns = {
             "about": "TEXT",
+            "birthday": "TEXT",
             "avatar_path": "TEXT",
             "avatar_photo_id": "INTEGER",
             "access_hash": "INTEGER",
@@ -112,6 +113,66 @@ class Database:
             WHERE media_path IS NULL AND photo_path IS NOT NULL
             """
         )
+
+        await self.execute(
+            """
+            CREATE TABLE IF NOT EXISTS avatars (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                contact_id INTEGER NOT NULL,
+                photo_id INTEGER NOT NULL,
+                path TEXT NOT NULL,
+                date INTEGER,
+                is_current INTEGER DEFAULT 0,
+                created_at INTEGER,
+                UNIQUE(contact_id, photo_id),
+                FOREIGN KEY (contact_id) REFERENCES contacts(id)
+            )
+            """
+        )
+        await self.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_avatars_contact_date
+            ON avatars(contact_id, date DESC, id DESC)
+            """
+        )
+
+        await self.execute(
+            """
+            INSERT OR IGNORE INTO avatars(contact_id, photo_id, path, is_current, created_at)
+            SELECT id, COALESCE(avatar_photo_id, 0), avatar_path, 1, COALESCE(updated_at, strftime('%s', 'now'))
+            FROM contacts
+            WHERE avatar_path IS NOT NULL AND avatar_path != ''
+            """
+        )
+
+        avatars_dir = self.path.parent / "media" / "avatars"
+        if avatars_dir.exists() and avatars_dir.is_dir():
+            for file_path in avatars_dir.glob("*_*.jpg"):
+                parts = file_path.stem.split("_", 1)
+                if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                    contact_id = int(parts[0])
+                    photo_id = int(parts[1])
+                    rel_path = f"media/avatars/{file_path.name}"
+                    mtime = int(file_path.stat().st_mtime)
+                    await self.execute(
+                        """
+                        INSERT OR IGNORE INTO avatars(contact_id, photo_id, path, date, is_current, created_at)
+                        VALUES (?, ?, ?, ?, 0, ?)
+                        """,
+                        (contact_id, photo_id, rel_path, mtime, mtime),
+                    )
+
+            await self.execute(
+                """
+                UPDATE avatars
+                SET is_current = 1
+                WHERE EXISTS (
+                    SELECT 1 FROM contacts
+                    WHERE contacts.id = avatars.contact_id
+                      AND contacts.avatar_photo_id = avatars.photo_id
+                )
+                """
+            )
 
     def _connection(self) -> sqlite3.Connection:
         if self.connection is None:

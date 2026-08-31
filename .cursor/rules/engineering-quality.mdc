@@ -1,0 +1,13 @@
+---
+description: Project engineering quality standards
+alwaysApply: true
+---
+
+# Engineering Quality
+
+- Write code that another maintainer can review without having to guess intent, hidden state, or data flow.
+- Prefer small, explicit changes that fit the current architecture over broad rewrites or clever abstractions.
+- Keep behavior observable where it matters: background work should expose useful status, errors should be actionable, and UI state should reflect backend changes.
+- Do not add fallback layers for unfinished branch behavior. Replace weak code with the clearer version.
+- Avoid cosmetic churn. If a file changes, the change should serve the user request or reduce real maintenance cost.
+- Before finishing, run the smallest meaningful verification available for the changed surface and report any remaining risk.

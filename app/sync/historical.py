@@ -18,6 +18,7 @@ from app.sync.common import (
     is_private_human_user,
     save_message,
     save_private_chat,
+    sync_user_avatars,
     user_log_name,
 )
 
@@ -82,6 +83,10 @@ async def sync_dialog(
     events: EventBroker,
 ) -> tuple[int, int]:
     await save_private_chat(db, user, client, data_dir)
+    try:
+        await sync_user_avatars(client, db, user, data_dir)
+    except Exception as error:
+        print(f"[Sync] Avatars sync failed for {user.id}: {error}")
 
     chat_id = user.id
     title = user_log_name(user)

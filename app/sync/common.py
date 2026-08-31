@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 import mimetypes
 import time
 
@@ -9,7 +10,13 @@ from telethon.tl.types import User
 from telethon.utils import get_display_name
 
 from app.db.connection import Database
-from app.db.queries import upsert_chat, upsert_contact, upsert_message
+from app.db.queries import (
+    list_contact_avatars,
+    upsert_avatar,
+    upsert_chat,
+    upsert_contact,
+    upsert_message,
+)
 
 
 def is_private_human_user(user: User) -> bool:
@@ -58,8 +65,9 @@ async def save_user(
     include_full: bool = False,
 ) -> None:
     about = None
+    birthday = None
     if include_full and client is not None:
-        about = await get_user_about(client, user)
+        about, birthday = await get_user_full_fields(client, user)
 
     avatar_path = None
     avatar_photo_id = getattr(user.photo, "photo_id", None)
@@ -67,6 +75,14 @@ async def save_user(
         avatar_path = await save_avatar(client, user, data_dir, avatar_photo_id)
         if avatar_photo_id is None:
             avatar_photo_id = 0
+        elif avatar_path:
+            await upsert_avatar(
+                db,
+                contact_id=user.id,
+                photo_id=avatar_photo_id,
+                path=avatar_path,
+                is_current=True,
+            )
 
     await upsert_contact(
         db,
@@ -76,6 +92,7 @@ async def save_user(
         user.username,
         user.phone,
         about=about,
+        birthday=birthday,
         avatar_path=avatar_path,
         avatar_photo_id=avatar_photo_id,
         access_hash=getattr(user, "access_hash", None),
@@ -102,6 +119,74 @@ async def save_private_chat(
 ) -> None:
     await save_user(db, user, client, data_dir, include_full=True)
     await upsert_chat(db, user.id, get_display_name(user) or str(user.id), user.username)
+
+
+async def sync_user_avatars(
+    client: TelegramClient,
+    db: Database,
+    user: User | int,
+    data_dir: Path,
+) -> list[dict[str, Any]]:
+    if isinstance(user, int):
+        try:
+            entity = await client.get_entity(user)
+            if not isinstance(entity, User):
+                return await list_contact_avatars(db, user)
+            user = entity
+        except Exception as error:
+            print(f"[Sync] Failed to get entity for avatars sync {user}: {error}")
+            return await list_contact_avatars(db, user)
+
+    contact_id = user.id
+    current_photo_id = getattr(user.photo, "photo_id", None)
+    avatars_dir = data_dir / "media" / "avatars"
+    avatars_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        is_first = True
+        async for photo in client.iter_profile_photos(user):
+            photo_id = getattr(photo, "id", None)
+            if photo_id is None:
+                continue
+
+            rel_path = Path("media") / "avatars" / f"{contact_id}_{photo_id}.jpg"
+            target_path = data_dir / rel_path
+
+            if not target_path.exists():
+                try:
+                    await client.download_media(photo, file=str(target_path))
+                except Exception as error:
+                    print(f"[Sync] Failed to download profile photo {photo_id} for {contact_id}: {error}")
+                    continue
+
+            photo_date = getattr(photo, "date", None)
+            timestamp = int(photo_date.timestamp()) if photo_date is not None else None
+            is_current = (photo_id == current_photo_id) or (current_photo_id is None and is_first)
+
+            await upsert_avatar(
+                db,
+                contact_id=contact_id,
+                photo_id=photo_id,
+                path=rel_path.as_posix(),
+                date=timestamp,
+                is_current=is_current,
+            )
+            is_first = False
+    except Exception as error:
+        print(f"[Sync] Failed to fetch profile photos for {contact_id}: {error}")
+
+    if current_photo_id is not None:
+        current_rel = await save_avatar(client, user, data_dir, current_photo_id)
+        if current_rel:
+            await upsert_avatar(
+                db,
+                contact_id=contact_id,
+                photo_id=current_photo_id,
+                path=current_rel,
+                is_current=True,
+            )
+
+    return await list_contact_avatars(db, contact_id)
 
 
 async def save_message(
@@ -268,13 +353,30 @@ def detect_media_file(path: Path) -> tuple[str, str] | None:
     return None
 
 
-async def get_user_about(client: TelegramClient, user: User) -> str | None:
+def format_birthday(birthday: Any) -> str | None:
+    if birthday is None:
+        return None
+    day = getattr(birthday, "day", None)
+    month = getattr(birthday, "month", None)
+    year = getattr(birthday, "year", None)
+    if not day or not month:
+        return None
+    if year:
+        return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+    return f"--{int(month):02d}-{int(day):02d}"
+
+
+async def get_user_full_fields(
+    client: TelegramClient,
+    user: User,
+) -> tuple[str | None, str | None]:
     try:
         full = await client(GetFullUserRequest(user))
-        return full.full_user.about or None
+        fu = full.full_user
+        return fu.about or None, format_birthday(getattr(fu, "birthday", None))
     except Exception as error:
         print(f"[Sync] Full user fetch failed for {user.id}: {error}")
-        return None
+        return None, None
 
 
 async def save_avatar(

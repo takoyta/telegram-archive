@@ -35,6 +35,7 @@ async def upsert_contact(
     username: str | None,
     phone: str | None,
     about: str | None = None,
+    birthday: str | None = None,
     avatar_path: str | None = None,
     avatar_photo_id: int | None = None,
     access_hash: int | None = None,
@@ -54,18 +55,19 @@ async def upsert_contact(
     await db.execute(
         """
         INSERT INTO contacts(
-            id, first_name, last_name, username, phone, about, avatar_path,
+            id, first_name, last_name, username, phone, about, birthday, avatar_path,
             avatar_photo_id, access_hash, is_contact, is_mutual_contact, is_premium,
             is_verified, is_scam, is_fake, is_deleted, is_restricted, lang_code,
             status, last_seen_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             first_name = excluded.first_name,
             last_name = excluded.last_name,
             username = excluded.username,
             phone = excluded.phone,
             about = COALESCE(excluded.about, contacts.about),
+            birthday = COALESCE(excluded.birthday, contacts.birthday),
             avatar_path = COALESCE(excluded.avatar_path, contacts.avatar_path),
             avatar_photo_id = COALESCE(excluded.avatar_photo_id, contacts.avatar_photo_id),
             access_hash = COALESCE(excluded.access_hash, contacts.access_hash),
@@ -89,6 +91,7 @@ async def upsert_contact(
             username,
             phone,
             about,
+            birthday,
             avatar_path,
             avatar_photo_id,
             access_hash,
@@ -323,6 +326,7 @@ async def list_chats(db: Database) -> list[dict[str, Any]]:
             c.title,
             c.username,
             c.synced_at,
+            contacts.phone,
             contacts.avatar_path,
             COUNT(m.id) AS message_count,
             SUM(CASE WHEN COALESCE(m.media_path, m.photo_path) IS NULL THEN 0 ELSE 1 END) AS photo_count,
@@ -337,6 +341,53 @@ async def list_chats(db: Database) -> list[dict[str, Any]]:
     return [row_to_dict(row) for row in rows]
 
 
+async def upsert_avatar(
+    db: Database,
+    contact_id: int,
+    photo_id: int,
+    path: str,
+    date: int | None = None,
+    is_current: bool = False,
+    created_at: int | None = None,
+) -> None:
+    if created_at is None:
+        created_at = int(time.time())
+
+    if is_current:
+        await db.execute(
+            "UPDATE avatars SET is_current = 0 WHERE contact_id = ?",
+            (contact_id,),
+        )
+
+    await db.execute(
+        """
+        INSERT INTO avatars(contact_id, photo_id, path, date, is_current, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(contact_id, photo_id) DO UPDATE SET
+            path = excluded.path,
+            date = COALESCE(excluded.date, avatars.date),
+            is_current = CASE WHEN excluded.is_current = 1 THEN 1 ELSE avatars.is_current END
+        """,
+        (contact_id, photo_id, path, date, int(is_current), created_at),
+    )
+
+
+async def list_contact_avatars(
+    db: Database,
+    contact_id: int,
+) -> list[dict[str, Any]]:
+    rows = await db.fetchall(
+        """
+        SELECT id, contact_id, photo_id, path, date, is_current, created_at
+        FROM avatars
+        WHERE contact_id = ?
+        ORDER BY is_current DESC, COALESCE(date, created_at, 0) DESC, id DESC
+        """,
+        (contact_id,),
+    )
+    return [row_to_dict(row) for row in rows]
+
+
 async def get_contact(db: Database, contact_id: int) -> dict[str, Any] | None:
     row = await db.fetchone(
         """
@@ -346,6 +397,7 @@ async def get_contact(db: Database, contact_id: int) -> dict[str, Any] | None:
             chats.synced_at,
             COUNT(messages.id) AS message_count,
             SUM(CASE WHEN COALESCE(messages.media_path, messages.photo_path) IS NULL THEN 0 ELSE 1 END) AS photo_count,
+            (SELECT COUNT(*) FROM avatars WHERE avatars.contact_id = contacts.id) AS avatar_count,
             MIN(messages.date) AS first_message_at,
             MAX(messages.date) AS last_message_at
         FROM contacts
