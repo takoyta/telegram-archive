@@ -1,4 +1,5 @@
 import re
+import sqlite3
 import time
 from typing import Any
 
@@ -359,17 +360,24 @@ async def upsert_avatar(
             (contact_id,),
         )
 
-    await db.execute(
-        """
-        INSERT INTO avatars(contact_id, photo_id, path, date, is_current, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(contact_id, photo_id) DO UPDATE SET
-            path = excluded.path,
-            date = COALESCE(excluded.date, avatars.date),
-            is_current = CASE WHEN excluded.is_current = 1 THEN 1 ELSE avatars.is_current END
-        """,
-        (contact_id, photo_id, path, date, int(is_current), created_at),
-    )
+    try:
+        await db.execute(
+            """
+            INSERT INTO avatars(contact_id, photo_id, path, date, is_current, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(contact_id, photo_id) DO UPDATE SET
+                path = excluded.path,
+                date = COALESCE(excluded.date, avatars.date),
+                is_current = CASE WHEN excluded.is_current = 1 THEN 1 ELSE avatars.is_current END
+            """,
+            (contact_id, photo_id, path, date, int(is_current), created_at),
+        )
+    except sqlite3.IntegrityError:
+        print(
+            f"[DB] Avatar insert failed: contact_id={contact_id} photo_id={photo_id} "
+            f"path={path} (missing parent contact?)"
+        )
+        raise
 
 
 async def list_contact_avatars(

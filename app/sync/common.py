@@ -75,14 +75,6 @@ async def save_user(
         avatar_path = await save_avatar(client, user, data_dir, avatar_photo_id)
         if avatar_photo_id is None:
             avatar_photo_id = 0
-        elif avatar_path:
-            await upsert_avatar(
-                db,
-                contact_id=user.id,
-                photo_id=avatar_photo_id,
-                path=avatar_path,
-                is_current=True,
-            )
 
     await upsert_contact(
         db,
@@ -109,6 +101,15 @@ async def save_user(
         last_seen_at=user_last_seen(user),
         updated_at=int(time.time()),
     )
+
+    if avatar_photo_id and avatar_path:
+        await upsert_avatar(
+            db,
+            contact_id=user.id,
+            photo_id=avatar_photo_id,
+            path=avatar_path,
+            is_current=True,
+        )
 
 
 async def save_private_chat(
