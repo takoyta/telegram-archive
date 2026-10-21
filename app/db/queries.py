@@ -121,7 +121,6 @@ async def upsert_message(
     date: int,
     is_edited: bool = False,
     edit_date: int | None = None,
-    photo_path: str | None = None,
     media_path: str | None = None,
     media_type: str | None = None,
 ) -> None:
@@ -129,18 +128,23 @@ async def upsert_message(
         """
         INSERT INTO messages(
             telegram_id, chat_id, sender_id, text, date, is_edited, edit_date,
-            photo_path, media_path, media_type, media_checked
+            media_path, media_type, media_checked
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         ON CONFLICT(telegram_id, chat_id) DO UPDATE SET
             sender_id = excluded.sender_id,
             text = excluded.text,
             date = excluded.date,
             is_edited = excluded.is_edited,
             edit_date = excluded.edit_date,
-            photo_path = COALESCE(excluded.photo_path, messages.photo_path),
-            media_path = COALESCE(excluded.media_path, messages.media_path),
-            media_type = COALESCE(excluded.media_type, messages.media_type),
+            media_path = CASE
+                WHEN COALESCE(messages.media_removed, 0) = 1 THEN NULL
+                ELSE COALESCE(excluded.media_path, messages.media_path)
+            END,
+            media_type = CASE
+                WHEN COALESCE(messages.media_removed, 0) = 1 THEN messages.media_type
+                ELSE COALESCE(excluded.media_type, messages.media_type)
+            END,
             media_checked = 1
         """,
         (
@@ -151,7 +155,6 @@ async def upsert_message(
             date,
             int(is_edited),
             edit_date,
-            photo_path,
             media_path,
             media_type,
         ),
@@ -299,23 +302,34 @@ async def mark_chat_synced(db: Database, chat_id: int, synced_at: int) -> None:
     )
 
 
-async def has_unchecked_media(db: Database, chat_id: int) -> bool:
-    row = await db.fetchone(
+async def list_unchecked_telegram_ids(db: Database, chat_id: int) -> list[int]:
+    rows = await db.fetchall(
         """
-        SELECT 1
+        SELECT telegram_id
         FROM messages
         WHERE chat_id = ? AND is_deleted = 0 AND COALESCE(media_checked, 0) = 0
-        LIMIT 1
+        ORDER BY telegram_id
         """,
         (chat_id,),
     )
-    return row is not None
+    return [row["telegram_id"] for row in rows]
 
 
-async def mark_chat_media_checked(db: Database, chat_id: int) -> None:
+async def mark_telegram_ids_media_checked(
+    db: Database,
+    chat_id: int,
+    telegram_ids: list[int],
+) -> None:
+    if not telegram_ids:
+        return
+    placeholders = ",".join("?" for _ in telegram_ids)
     await db.execute(
-        "UPDATE messages SET media_checked = 1 WHERE chat_id = ?",
-        (chat_id,),
+        f"""
+        UPDATE messages
+        SET media_checked = 1
+        WHERE chat_id = ? AND telegram_id IN ({placeholders})
+        """,
+        (chat_id, *telegram_ids),
     )
 
 
@@ -330,7 +344,11 @@ async def list_chats(db: Database) -> list[dict[str, Any]]:
             contacts.phone,
             contacts.avatar_path,
             COUNT(m.id) AS message_count,
-            SUM(CASE WHEN COALESCE(m.media_path, m.photo_path) IS NULL THEN 0 ELSE 1 END) AS photo_count,
+            SUM(CASE
+                WHEN COALESCE(m.media_removed, 0) = 0
+                 AND m.media_path IS NOT NULL THEN 1
+                ELSE 0
+            END) AS photo_count,
             MAX(m.date) AS last_message_at
         FROM chats c
         LEFT JOIN contacts ON contacts.id = c.id
@@ -366,9 +384,16 @@ async def upsert_avatar(
             INSERT INTO avatars(contact_id, photo_id, path, date, is_current, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(contact_id, photo_id) DO UPDATE SET
-                path = excluded.path,
+                path = CASE
+                    WHEN COALESCE(avatars.removed, 0) = 1 THEN avatars.path
+                    ELSE excluded.path
+                END,
                 date = COALESCE(excluded.date, avatars.date),
-                is_current = CASE WHEN excluded.is_current = 1 THEN 1 ELSE avatars.is_current END
+                is_current = CASE
+                    WHEN COALESCE(avatars.removed, 0) = 1 THEN 0
+                    WHEN excluded.is_current = 1 THEN 1
+                    ELSE avatars.is_current
+                END
             """,
             (contact_id, photo_id, path, date, int(is_current), created_at),
         )
@@ -389,6 +414,7 @@ async def list_contact_avatars(
         SELECT id, contact_id, photo_id, path, date, is_current, created_at
         FROM avatars
         WHERE contact_id = ?
+          AND COALESCE(removed, 0) = 0
         ORDER BY is_current DESC, COALESCE(date, created_at, 0) DESC, id DESC
         """,
         (contact_id,),
@@ -404,8 +430,17 @@ async def get_contact(db: Database, contact_id: int) -> dict[str, Any] | None:
             chats.title AS chat_title,
             chats.synced_at,
             COUNT(messages.id) AS message_count,
-            SUM(CASE WHEN COALESCE(messages.media_path, messages.photo_path) IS NULL THEN 0 ELSE 1 END) AS photo_count,
-            (SELECT COUNT(*) FROM avatars WHERE avatars.contact_id = contacts.id) AS avatar_count,
+            SUM(CASE
+                WHEN COALESCE(messages.media_removed, 0) = 0
+                 AND messages.media_path IS NOT NULL THEN 1
+                ELSE 0
+            END) AS photo_count,
+            (
+                SELECT COUNT(*)
+                FROM avatars
+                WHERE avatars.contact_id = contacts.id
+                  AND COALESCE(avatars.removed, 0) = 0
+            ) AS avatar_count,
             MIN(messages.date) AS first_message_at,
             MAX(messages.date) AS last_message_at
         FROM contacts
@@ -431,7 +466,7 @@ async def list_chat_media(
             m.id,
             m.telegram_id,
             m.date,
-            COALESCE(m.media_path, m.photo_path) AS media_path,
+            m.media_path,
             m.media_type,
             m.text,
             c.first_name AS sender_first_name,
@@ -440,7 +475,8 @@ async def list_chat_media(
         FROM messages m
         LEFT JOIN contacts c ON c.id = m.sender_id
         WHERE m.chat_id = ?
-          AND COALESCE(m.media_path, m.photo_path) IS NOT NULL
+          AND COALESCE(m.media_removed, 0) = 0
+          AND m.media_path IS NOT NULL
         ORDER BY m.date DESC, m.telegram_id DESC
         LIMIT ? OFFSET ?
         """,
@@ -549,6 +585,160 @@ async def search_messages(
     messages = [row_to_dict(row) for row in rows]
     histories = await get_message_edit_histories(db, [message["id"] for message in messages])
     return attach_edit_histories(messages, histories)
+
+
+async def is_message_media_removed(db: Database, chat_id: int, telegram_id: int) -> bool:
+    row = await db.fetchone(
+        """
+        SELECT 1
+        FROM messages
+        WHERE chat_id = ? AND telegram_id = ? AND COALESCE(media_removed, 0) = 1
+        LIMIT 1
+        """,
+        (chat_id, telegram_id),
+    )
+    return row is not None
+
+
+async def get_message_media(db: Database, message_id: int) -> dict[str, Any] | None:
+    row = await db.fetchone(
+        """
+        SELECT id, chat_id, telegram_id, media_path, media_type, media_removed
+        FROM messages
+        WHERE id = ?
+        """,
+        (message_id,),
+    )
+    return row_to_dict(row) if row is not None else None
+
+
+async def mark_message_media_removed(db: Database, message_id: int) -> None:
+    await db.execute(
+        """
+        UPDATE messages
+        SET media_removed = 1,
+            media_path = NULL
+        WHERE id = ?
+        """,
+        (message_id,),
+    )
+
+
+async def restore_message_media(db: Database, record: dict[str, Any]) -> None:
+    await db.execute(
+        """
+        UPDATE messages
+        SET media_removed = 0,
+            media_path = ?
+        WHERE id = ?
+        """,
+        (record.get("media_path"), record["id"]),
+    )
+
+
+async def is_avatar_removed(db: Database, contact_id: int, photo_id: int) -> bool:
+    row = await db.fetchone(
+        """
+        SELECT 1
+        FROM avatars
+        WHERE contact_id = ? AND photo_id = ? AND COALESCE(removed, 0) = 1
+        LIMIT 1
+        """,
+        (contact_id, photo_id),
+    )
+    return row is not None
+
+
+async def get_avatar(db: Database, avatar_id: int) -> dict[str, Any] | None:
+    row = await db.fetchone(
+        """
+        SELECT id, contact_id, photo_id, path, is_current, removed
+        FROM avatars
+        WHERE id = ?
+        """,
+        (avatar_id,),
+    )
+    return row_to_dict(row) if row is not None else None
+
+
+async def mark_avatar_removed(db: Database, avatar_id: int) -> None:
+    await db.execute(
+        """
+        UPDATE avatars
+        SET removed = 1, is_current = 0
+        WHERE id = ?
+        """,
+        (avatar_id,),
+    )
+
+
+async def restore_avatar(db: Database, record: dict[str, Any]) -> None:
+    await db.execute(
+        """
+        UPDATE avatars
+        SET removed = 0, is_current = ?
+        WHERE id = ?
+        """,
+        (int(bool(record.get("is_current"))), record["id"]),
+    )
+
+
+async def apply_removed_avatar(db: Database, avatar: dict[str, Any]) -> None:
+    contact = await db.fetchone(
+        "SELECT avatar_path, avatar_photo_id FROM contacts WHERE id = ?",
+        (avatar["contact_id"],),
+    )
+    points_here = contact is not None and (
+        contact["avatar_path"] == avatar["path"] or contact["avatar_photo_id"] == avatar["photo_id"]
+    )
+    if not avatar["is_current"] and not points_here:
+        return
+
+    replacement = await db.fetchone(
+        """
+        SELECT photo_id, path
+        FROM avatars
+        WHERE contact_id = ?
+          AND id != ?
+          AND COALESCE(removed, 0) = 0
+          AND path IS NOT NULL
+          AND path != ''
+        ORDER BY COALESCE(date, created_at, 0) DESC, id DESC
+        LIMIT 1
+        """,
+        (avatar["contact_id"], avatar["id"]),
+    )
+    if replacement is None:
+        await db.execute(
+            """
+            UPDATE contacts
+            SET avatar_path = NULL, avatar_photo_id = NULL
+            WHERE id = ?
+            """,
+            (avatar["contact_id"],),
+        )
+        return
+
+    await db.execute(
+        "UPDATE avatars SET is_current = 0 WHERE contact_id = ?",
+        (avatar["contact_id"],),
+    )
+    await db.execute(
+        """
+        UPDATE avatars
+        SET is_current = 1
+        WHERE contact_id = ? AND photo_id = ? AND COALESCE(removed, 0) = 0
+        """,
+        (avatar["contact_id"], replacement["photo_id"]),
+    )
+    await db.execute(
+        """
+        UPDATE contacts
+        SET avatar_path = ?, avatar_photo_id = ?
+        WHERE id = ?
+        """,
+        (replacement["path"], replacement["photo_id"], avatar["contact_id"]),
+    )
 
 
 def build_fts_query(query: str) -> str:

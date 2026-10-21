@@ -11,14 +11,14 @@
       <div class="boot-card">
         <div class="boot-spinner" aria-hidden="true"></div>
         <div class="boot-text">Загрузка архива...</div>
-        <div class="boot-version" id="bootVersion">v0.2.9</div>
+        <div class="boot-version" id="bootVersion">v0.2.16</div>
       </div>
     </div>
     <section class="auth-screen hidden" id="auth" data-ta-role="auth">
       <form class="auth-card" id="authForm">
         <div class="auth-card-header">
           <h1>Вход в Telegram</h1>
-          <span class="version-badge" id="authVersion">v0.2.9</span>
+          <span class="version-badge" id="authVersion">v0.2.16</span>
         </div>
         <p id="authText">Подключите Telegram-аккаунт, чтобы начать синхронизацию архива.</p>
         <div class="auth-help">
@@ -108,11 +108,11 @@
             <div class="sidebar-brand">Telegram Archiver</div>
             <div class="sidebar-account" id="account" data-ta-role="account" hidden></div>
           </div>
-          <span class="version-badge" id="appVersion">v0.2.9</span>
+          <span class="version-badge" id="appVersion">v0.2.16</span>
         </div>
         <div class="chat-search">
           <input id="chatSearch" type="text" placeholder="Поиск контактов" autocomplete="off">
-          <button class="chat-search-clear hidden" id="chatSearchClear" type="button" aria-label="Очистить">×</button>
+          <button class="icon-x chat-search-clear hidden" id="chatSearchClear" type="button" aria-label="Очистить">×</button>
         </div>
         <div id="chats" data-ta-role="chats"></div>
         <div class="event-log" id="status" data-ta-role="status">Загрузка...</div>
@@ -125,7 +125,7 @@
           </button>
           <div class="message-search">
             <input id="messageSearch" type="text" placeholder="Поиск по сообщениям" disabled autocomplete="off">
-            <button class="message-search-clear hidden" id="messageSearchClear" type="button" aria-label="Очистить">×</button>
+            <button class="icon-x message-search-clear hidden" id="messageSearchClear" type="button" aria-label="Очистить">×</button>
           </div>
         </div>
         <div class="chat-panels">
@@ -145,32 +145,34 @@
             <div class="profile-title" id="contactTitle"></div>
             <div class="muted" id="contactSubtitle"></div>
           </div>
-          <button class="profile-close" id="contactClose" type="button" aria-label="Закрыть">×</button>
+          <button class="icon-x profile-close" id="contactClose" type="button" aria-label="Закрыть">×</button>
         </div>
-        <div class="profile-avatars" id="profileAvatars">
-          <div class="profile-avatars-header">
-            <div class="profile-avatars-title">
-              <span>Аватары</span>
-              <span class="avatars-count" id="contactAvatarsCount">0</span>
+        <div class="contact-card-body">
+          <div class="profile-avatars" id="profileAvatars">
+            <div class="profile-avatars-header">
+              <div class="profile-avatars-title">
+                <span>Аватары</span>
+                <span class="avatars-count" id="contactAvatarsCount">0</span>
+              </div>
+              <button class="avatars-sync-button" id="syncAvatarsButton" type="button">
+                <span class="sync-icon">↻</span>
+                <span class="sync-text">Загрузить с Telegram</span>
+              </button>
             </div>
-            <button class="avatars-sync-button" id="syncAvatarsButton" type="button">
-              <span class="sync-icon">↻</span>
-              <span class="sync-text">Загрузить с Telegram</span>
-            </button>
+            <div class="profile-avatars-gallery" id="contactAvatarsGallery"></div>
           </div>
-          <div class="profile-avatars-gallery" id="contactAvatarsGallery"></div>
+          <div class="profile-body" id="contactBody"></div>
         </div>
-        <div class="profile-body" id="contactBody"></div>
       </div>
     </div>
     <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Просмотр изображения">
-      <button class="lightbox-close" id="lightboxClose" type="button" aria-label="Закрыть">×</button>
-      <button class="lightbox-nav lightbox-prev hidden" id="lightboxPrev" type="button" aria-label="Предыдущее">‹</button>
+      <button class="icon-x lightbox-close" id="lightboxClose" type="button" aria-label="Закрыть">×</button>
+      <button class="lightbox-nav lightbox-prev hidden" id="lightboxPrev" type="button" aria-label="Предыдущее"></button>
       <div class="lightbox-content">
         <img id="lightboxImage" alt="">
         <div class="lightbox-caption" id="lightboxCaption"></div>
       </div>
-      <button class="lightbox-nav lightbox-next hidden" id="lightboxNext" type="button" aria-label="Следующее">›</button>
+      <button class="lightbox-nav lightbox-next hidden" id="lightboxNext" type="button" aria-label="Следующее"></button>
     </div>
 
     <script type="module" src="./main.js"></script>

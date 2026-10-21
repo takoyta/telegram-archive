@@ -70,19 +70,53 @@ export function scheduleMediaRefresh(delay = 250) {
   }, delay);
 }
 
+const PAGE_SIZE = 200;
+
+function oldestTelegramId(container, skipMessageId) {
+  let oldest = null;
+  for (const node of container.querySelectorAll("[data-ta-telegram-id]")) {
+    if (skipMessageId != null && node.dataset.taMessageId === String(skipMessageId)) continue;
+    const id = Number(node.dataset.taTelegramId);
+    if (!Number.isFinite(id)) continue;
+    if (oldest == null || id < oldest) oldest = id;
+  }
+  return oldest;
+}
+
+async function fetchLoadedWindow(path, anchorId) {
+  const items = [];
+  let offset = 0;
+  while (items.length < 5000) {
+    const page = await fetchJson(`${path}?offset=${offset}&limit=${PAGE_SIZE}`);
+    items.push(...page);
+    if (page.length < PAGE_SIZE) {
+      if (anchorId == null) return { items, hasMore: false };
+      const anchorIndex = items.findIndex(item => item.telegram_id === anchorId);
+      if (anchorIndex >= 0) return { items: items.slice(0, anchorIndex + 1), hasMore: false };
+      return { items, hasMore: false };
+    }
+    if (anchorId == null) return { items, hasMore: true };
+    const anchorIndex = items.findIndex(item => item.telegram_id === anchorId);
+    if (anchorIndex >= 0) return { items: items.slice(0, anchorIndex + 1), hasMore: true };
+    offset += page.length;
+  }
+  return { items, hasMore: true };
+}
+
 async function refreshCurrentMedia() {
   if (!state.chatId || state.isLoadingMedia) return;
 
   const chatId = state.chatId;
   const previousTop = dom.mediaPanelEl.scrollTop;
   const previousHeight = dom.mediaPanelEl.scrollHeight;
-  const limit = Math.min(Math.max(state.mediaOffset, state.mediaLimit), 200);
-  const items = await fetchJson(`/api/chats/${chatId}/media?limit=${limit}`);
+  const anchorId = oldestTelegramId(dom.mediaPanelEl);
+  const { items, hasMore } = await fetchLoadedWindow(`/api/chats/${chatId}/media`, anchorId);
   if (state.chatId !== chatId || isMessageSearchActive()) return;
 
   state.mediaOffset = items.length;
-  state.hasMoreMedia = items.length === limit;
+  state.hasMoreMedia = hasMore;
   renderMediaPanel(items, { reset: true });
+  renderMediaAvatars(state.avatars);
   dom.mediaPanelEl.scrollTop = dom.mediaPanelEl.scrollHeight - previousHeight + previousTop;
 }
 
@@ -93,12 +127,12 @@ async function refreshCurrentChat() {
   const keepBottom = isNearBottom();
   const previousTop = dom.messagesEl.scrollTop;
   const previousHeight = dom.messagesEl.scrollHeight;
-  const limit = Math.min(Math.max(state.offset, state.limit), 200);
-  const messages = await fetchJson(`/api/chats/${chatId}/messages?limit=${limit}`);
+  const anchorId = oldestTelegramId(dom.messagesEl);
+  const { items: messages, hasMore } = await fetchLoadedWindow(`/api/chats/${chatId}/messages`, anchorId);
   if (state.chatId !== chatId || isMessageSearchActive()) return;
 
   state.offset = messages.length;
-  state.hasMore = messages.length === limit;
+  state.hasMore = hasMore;
   renderMessages(messages, { reset: true });
 
   if (keepBottom) {
@@ -233,6 +267,59 @@ export async function syncCurrentContactAvatars() {
     dom.syncAvatarsButtonEl.classList.remove("loading");
     if (text) text.textContent = "Загрузить с Telegram";
   }
+}
+
+export async function deleteSidebarMedia({ kind, id }) {
+  if (!id || state.isDeletingMedia) return;
+  const prompt = kind === "avatar"
+    ? "Удалить этот аватар с диска? Он больше не скачается и пропадёт из интерфейса."
+    : "Удалить этот файл с диска? Он больше не скачается и пропадёт из интерфейса.";
+  if (!window.confirm(prompt)) return;
+
+  state.isDeletingMedia = true;
+  try {
+    const url = kind === "avatar"
+      ? `/api/avatars/${id}`
+      : `/api/messages/${id}/media`;
+    await fetchJson(url, { method: "DELETE" });
+    await reloadAfterMediaDelete(kind === "message" ? id : null);
+  } catch (error) {
+    window.alert(error.message);
+  } finally {
+    state.isDeletingMedia = false;
+  }
+}
+
+async function reloadAfterMediaDelete(skipMessageId) {
+  const chatId = state.chatId;
+  if (!chatId) return;
+
+  const anchorId = oldestTelegramId(dom.mediaPanelEl, skipMessageId);
+  const [{ items, hasMore }, avatars] = await Promise.all([
+    fetchLoadedWindow(`/api/chats/${chatId}/media`, anchorId),
+    fetchJson(`/api/contacts/${chatId}/avatars`).catch(() => []),
+    loadChats()
+  ]);
+  if (state.chatId !== chatId) return;
+
+  state.avatars = avatars || [];
+  state.mediaOffset = items.length;
+  state.hasMoreMedia = hasMore;
+  renderMediaPanel(items, { reset: true });
+  renderMediaAvatars(state.avatars);
+
+  if (dom.contactModalEl.classList.contains("open")) {
+    const contact = await fetchJson(`/api/contacts/${chatId}`);
+    if (state.chatId !== chatId) return;
+    renderContactCard(contact);
+    renderContactAvatars(state.avatars);
+  }
+
+  if (isMessageSearchActive()) {
+    await searchChatMessages(dom.messageSearchEl.value);
+    return;
+  }
+  await refreshCurrentChat();
 }
 
 export async function loadMore() {

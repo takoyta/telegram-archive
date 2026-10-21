@@ -5,6 +5,7 @@ import {
   loadMoreMedia,
   searchChatMessages,
   selectChat,
+  deleteSidebarMedia,
   syncCurrentContactAvatars
 } from "./chat.js";
 import { dom } from "./dom.js";
@@ -17,11 +18,13 @@ import {
   renderChats,
   renderHistoryStatus,
   renderMediaStatus,
+  setOnDeleteMedia,
   setOnSelectChat
 } from "./render.js";
 import { state } from "./state.js";
 
 setOnSelectChat(selectChat);
+setOnDeleteMedia(deleteSidebarMedia);
 
 dom.messagesEl.addEventListener("scroll", () => {
   if (dom.messagesEl.scrollTop < 120) {

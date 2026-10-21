@@ -13,9 +13,14 @@ import {
 import { state } from "./state.js";
 
 let onSelectChat = () => {};
+let onDeleteMedia = async () => {};
 
 export function setOnSelectChat(fn) {
   onSelectChat = fn;
+}
+
+export function setOnDeleteMedia(fn) {
+  onDeleteMedia = fn;
 }
 
 export function renderAvatar(element, title, avatarPath) {
@@ -145,9 +150,10 @@ export function renderContactAvatars(avatars) {
 }
 
 export function renderMediaAvatars(avatars) {
-  let section = findMediaSection("Аватары");
+  let section = findMediaSection("avatar");
   if (!avatars || avatars.length === 0) {
     if (section) section.remove();
+    syncMediaEmptyState();
     return;
   }
 
@@ -163,6 +169,7 @@ export function renderMediaAvatars(avatars) {
   if (!section) {
     section = document.createElement("section");
     section.className = "media-section";
+    section.dataset.mediaType = "avatar";
     const heading = document.createElement("div");
     heading.className = "media-section-title";
     const body = document.createElement("div");
@@ -204,8 +211,12 @@ export function renderMediaAvatars(avatars) {
     caption.textContent = avatar.is_current ? "Текущий" : (avatar.date ? formatDateTime(avatar.date) : "");
 
     article.append(button, caption);
+    if (avatar.id != null) {
+      article.append(createMediaDeleteButton("avatar", avatar.id));
+    }
     body.append(article);
   });
+  syncMediaEmptyState();
 }
 
 function contactRows(contact) {
@@ -370,7 +381,16 @@ export function renderChats() {
 }
 
 function appendMessageMedia(bubble, message) {
-  const path = message.media_path || message.photo_path;
+  if (message.media_removed) {
+    if (!message.text) {
+      const note = document.createElement("div");
+      note.className = "media-removed-note";
+      note.textContent = "медиа удалено";
+      bubble.append(note);
+    }
+    return;
+  }
+  const path = message.media_path;
   if (!path) return;
   bubble.append(createInlineMedia(path, message.media_type || "image"));
 }
@@ -402,6 +422,11 @@ function createInlineMedia(path, type) {
   link.href = url;
   link.addEventListener("click", event => {
     event.preventDefault();
+    const index = chatImageGallery.findIndex(entry => entry.url === url);
+    if (index >= 0) {
+      openLightbox(url, chatImageGallery[index].caption, chatImageGallery, index);
+      return;
+    }
     openLightbox(url);
   });
   image.className = "media-thumb";
@@ -415,7 +440,9 @@ function mediaCaption(item) {
   return [senderName(item), formatTime(item.date)].filter(Boolean).join(" · ");
 }
 
-function createGalleryItem(item) {
+let chatImageGallery = [];
+
+function createGalleryItem(item, imageIndex = -1) {
   const path = item.media_path;
   const type = item.media_type || "image";
   const url = mediaUrl(path);
@@ -448,7 +475,14 @@ function createGalleryItem(item) {
     image.loading = "lazy";
     image.src = url;
     image.alt = "";
-    button.addEventListener("click", () => openLightbox(url));
+    button.addEventListener("click", () => {
+      if (imageIndex >= 0) {
+        const current = chatImageGallery[imageIndex];
+        openLightbox(current.url, current.caption, chatImageGallery, imageIndex);
+        return;
+      }
+      openLightbox(url);
+    });
     button.append(image);
     element.append(button);
   }
@@ -457,7 +491,25 @@ function createGalleryItem(item) {
   caption.className = "media-item-caption";
   caption.textContent = mediaCaption(item);
   element.append(caption);
+  if (item.id != null) {
+    element.append(createMediaDeleteButton("message", item.id));
+  }
   return element;
+}
+
+function createMediaDeleteButton(kind, id) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "icon-x media-delete";
+  button.title = "Удалить с диска";
+  button.setAttribute("aria-label", "Удалить с диска");
+  button.textContent = "×";
+  button.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    onDeleteMedia({ kind, id });
+  });
+  return button;
 }
 
 function mediaSectionMeta(type) {
@@ -466,10 +518,24 @@ function mediaSectionMeta(type) {
   return { title: "Фото", layout: "grid" };
 }
 
-function findMediaSection(title) {
+function findMediaSection(type) {
   return [...dom.mediaPanelEl.querySelectorAll(".media-section")].find(section => {
-    return section.querySelector(".media-section-title")?.textContent?.startsWith(title);
+    return section.dataset.mediaType === type;
   });
+}
+
+function syncMediaEmptyState() {
+  const hasSection = dom.mediaPanelEl.querySelector(".media-section");
+  const empty = dom.mediaPanelEl.querySelector(".media-panel-empty");
+  if (hasSection) {
+    empty?.remove();
+    return;
+  }
+  if (empty) return;
+  const node = document.createElement("div");
+  node.className = "media-panel-empty";
+  node.textContent = "Медиа нет";
+  dom.mediaPanelEl.append(node);
 }
 
 function updateMediaSectionTitle(section, title) {
@@ -478,15 +544,16 @@ function updateMediaSectionTitle(section, title) {
   if (heading) heading.textContent = `${title} · ${count}`;
 }
 
-function appendMediaSection(type, items) {
+function appendMediaSection(type, items, indexOffset = 0) {
   if (items.length === 0) return;
 
   const { title, layout } = mediaSectionMeta(type);
-  let section = findMediaSection(title);
+  let section = findMediaSection(type);
 
   if (!section) {
     section = document.createElement("section");
     section.className = "media-section";
+    section.dataset.mediaType = type;
     const heading = document.createElement("div");
     heading.className = "media-section-title";
     const body = document.createElement("div");
@@ -496,35 +563,42 @@ function appendMediaSection(type, items) {
   }
 
   const body = section.querySelector(".media-grid, .media-list");
-  for (const item of items) {
-    body.append(createGalleryItem(item));
-  }
+  items.forEach((item, index) => {
+    const imageIndex = type === "image" ? indexOffset + index : -1;
+    body.append(createGalleryItem(item, imageIndex));
+  });
   updateMediaSectionTitle(section, title);
 }
 
 export function renderMediaPanel(items, options = {}) {
   if (options.reset) {
-    dom.mediaPanelEl.innerHTML = "";
+    chatImageGallery = [];
+    for (const section of [...dom.mediaPanelEl.querySelectorAll(".media-section")]) {
+      if (section.dataset.mediaType !== "avatar") section.remove();
+    }
   }
 
   dom.mediaPanelEl.querySelector(".media-panel-status")?.remove();
   dom.mediaPanelEl.querySelector(".media-panel-empty")?.remove();
 
   if (items.length === 0 && options.reset) {
-    const empty = document.createElement("div");
-    empty.className = "media-panel-empty";
-    empty.textContent = "Медиа нет";
-    dom.mediaPanelEl.append(empty);
+    syncMediaEmptyState();
     return;
   }
 
   const images = items.filter(item => (item.media_type || "image") === "image");
   const videos = items.filter(item => item.media_type === "video");
   const audios = items.filter(item => item.media_type === "audio");
+  const indexOffset = chatImageGallery.length;
+  chatImageGallery.push(...images.map(item => ({
+    url: mediaUrl(item.media_path),
+    caption: mediaCaption(item)
+  })));
 
-  appendMediaSection("image", images);
+  appendMediaSection("image", images, indexOffset);
   appendMediaSection("video", videos);
   appendMediaSection("audio", audios);
+  syncMediaEmptyState();
 }
 
 export function renderMediaStatus(text) {
@@ -537,6 +611,7 @@ export function renderMediaStatus(text) {
 }
 
 export function clearMediaPanel(message = "Выберите чат") {
+  chatImageGallery = [];
   dom.mediaPanelEl.innerHTML = "";
   if (!message) return;
   const empty = document.createElement("div");

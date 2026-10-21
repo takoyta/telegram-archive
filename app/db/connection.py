@@ -95,6 +95,7 @@ class Database:
             "media_path": "TEXT",
             "media_type": "TEXT",
             "media_checked": "INTEGER DEFAULT 0",
+            "media_removed": "INTEGER DEFAULT 0",
         }
         existing = {
             row["name"]
@@ -107,12 +108,28 @@ class Database:
 
         await self.execute(
             """
-            UPDATE messages
-            SET media_path = photo_path,
-                media_type = 'image'
-            WHERE media_path IS NULL AND photo_path IS NOT NULL
+            CREATE TABLE IF NOT EXISTS app_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
             """
         )
+
+        message_names = {
+            row["name"] for row in await self.fetchall("PRAGMA table_info(messages)")
+        }
+        if "photo_path" in message_names:
+            await self.execute(
+                """
+                UPDATE messages
+                SET media_path = photo_path,
+                    media_type = COALESCE(media_type, 'image')
+                WHERE (media_path IS NULL OR media_path = '')
+                  AND photo_path IS NOT NULL
+                  AND photo_path != ''
+                """
+            )
+            await self.execute("ALTER TABLE messages DROP COLUMN photo_path")
 
         await self.execute(
             """
@@ -123,6 +140,7 @@ class Database:
                 path TEXT NOT NULL,
                 date INTEGER,
                 is_current INTEGER DEFAULT 0,
+                removed INTEGER DEFAULT 0,
                 created_at INTEGER,
                 UNIQUE(contact_id, photo_id),
                 FOREIGN KEY (contact_id) REFERENCES contacts(id)
@@ -136,6 +154,11 @@ class Database:
             """
         )
 
+        avatar_columns = await self.fetchall("PRAGMA table_info(avatars)")
+        avatar_column_names = {row["name"] for row in avatar_columns}
+        if "removed" not in avatar_column_names:
+            await self.execute("ALTER TABLE avatars ADD COLUMN removed INTEGER DEFAULT 0")
+
         await self.execute(
             """
             INSERT OR IGNORE INTO avatars(contact_id, photo_id, path, is_current, created_at)
@@ -145,22 +168,37 @@ class Database:
             """
         )
 
+        avatars_imported = await self.fetchone(
+            "SELECT value FROM app_meta WHERE key = 'avatar_files_imported'"
+        )
         avatars_dir = self.path.parent / "media" / "avatars"
-        if avatars_dir.exists() and avatars_dir.is_dir():
+        if avatars_imported is None and avatars_dir.exists() and avatars_dir.is_dir():
+            contact_ids = {
+                row["id"] for row in await self.fetchall("SELECT id FROM contacts")
+            }
+            missing_contacts: set[int] = set()
             for file_path in avatars_dir.glob("*_*.jpg"):
                 parts = file_path.stem.split("_", 1)
-                if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
-                    contact_id = int(parts[0])
-                    photo_id = int(parts[1])
-                    rel_path = f"media/avatars/{file_path.name}"
-                    mtime = int(file_path.stat().st_mtime)
-                    await self.execute(
-                        """
-                        INSERT OR IGNORE INTO avatars(contact_id, photo_id, path, date, is_current, created_at)
-                        VALUES (?, ?, ?, ?, 0, ?)
-                        """,
-                        (contact_id, photo_id, rel_path, mtime, mtime),
-                    )
+                if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
+                    continue
+                contact_id = int(parts[0])
+                if contact_id not in contact_ids:
+                    missing_contacts.add(contact_id)
+                    continue
+                photo_id = int(parts[1])
+                rel_path = f"media/avatars/{file_path.name}"
+                mtime = int(file_path.stat().st_mtime)
+                await self.execute(
+                    """
+                    INSERT OR IGNORE INTO avatars(contact_id, photo_id, path, date, is_current, created_at)
+                    VALUES (?, ?, ?, ?, 0, ?)
+                    """,
+                    (contact_id, photo_id, rel_path, mtime, mtime),
+                )
+
+            if missing_contacts:
+                ids = ", ".join(str(item) for item in sorted(missing_contacts))
+                print(f"[DB] Skipped avatar files for missing contacts: {ids}")
 
             await self.execute(
                 """
@@ -172,6 +210,11 @@ class Database:
                       AND contacts.avatar_photo_id = avatars.photo_id
                 )
                 """
+            )
+
+        if avatars_imported is None:
+            await self.execute(
+                "INSERT INTO app_meta(key, value) VALUES ('avatar_files_imported', '1')"
             )
 
     def _connection(self) -> sqlite3.Connection:

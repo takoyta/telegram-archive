@@ -11,6 +11,8 @@ from telethon.utils import get_display_name
 
 from app.db.connection import Database
 from app.db.queries import (
+    is_avatar_removed,
+    is_message_media_removed,
     list_contact_avatars,
     upsert_avatar,
     upsert_chat,
@@ -71,10 +73,11 @@ async def save_user(
 
     avatar_path = None
     avatar_photo_id = getattr(user.photo, "photo_id", None)
-    if client is not None and data_dir is not None:
-        avatar_path = await save_avatar(client, user, data_dir, avatar_photo_id)
-        if avatar_photo_id is None:
-            avatar_photo_id = 0
+    if avatar_photo_id and await is_avatar_removed(db, user.id, avatar_photo_id):
+        avatar_path = None
+        avatar_photo_id = None
+    elif client is not None and data_dir is not None:
+        avatar_path = await save_avatar(client, user, db, data_dir, avatar_photo_id)
 
     await upsert_contact(
         db,
@@ -153,12 +156,22 @@ async def sync_user_avatars(
             rel_path = Path("media") / "avatars" / f"{contact_id}_{photo_id}.jpg"
             target_path = data_dir / rel_path
 
+            if await is_avatar_removed(db, contact_id, photo_id):
+                if target_path.exists():
+                    target_path.unlink(missing_ok=True)
+                continue
+
             if not target_path.exists():
                 try:
                     await client.download_media(photo, file=str(target_path))
                 except Exception as error:
                     print(f"[Sync] Failed to download profile photo {photo_id} for {contact_id}: {error}")
                     continue
+
+            if await is_avatar_removed(db, contact_id, photo_id):
+                if target_path.exists():
+                    target_path.unlink(missing_ok=True)
+                continue
 
             photo_date = getattr(photo, "date", None)
             timestamp = int(photo_date.timestamp()) if photo_date is not None else None
@@ -177,7 +190,7 @@ async def sync_user_avatars(
         print(f"[Sync] Failed to fetch profile photos for {contact_id}: {error}")
 
     if current_photo_id is not None:
-        current_rel = await save_avatar(client, user, data_dir, current_photo_id)
+        current_rel = await save_avatar(client, user, db, data_dir, current_photo_id)
         if current_rel:
             await upsert_avatar(
                 db,
@@ -209,8 +222,9 @@ async def save_message(
 
     media_type = message_media_type(message)
     media_path = None
-    if download_photos and media_type is not None:
-        media_path = await save_media(client, message, chat_id, data_dir, media_type)
+    removed = await is_message_media_removed(db, chat_id, message.id)
+    if download_photos and media_type is not None and not removed:
+        media_path = await save_media(client, message, chat_id, data_dir, media_type, db)
 
     await upsert_message(
         db,
@@ -221,7 +235,6 @@ async def save_message(
         date=int(message.date.timestamp()),
         is_edited=message.edit_date is not None,
         edit_date=int(message.edit_date.timestamp()) if message.edit_date else None,
-        photo_path=media_path if media_type == "image" else None,
         media_path=media_path,
         media_type=media_type if media_path else None,
     )
@@ -234,7 +247,12 @@ async def save_media(
     chat_id: int,
     data_dir: Path,
     media_type: str,
+    db: Database | None = None,
 ) -> str | None:
+    if message.id is not None and db is not None and await is_message_media_removed(db, chat_id, message.id):
+        _discard_message_files(data_dir, chat_id, message.id)
+        return None
+
     existing = existing_media_path(data_dir, chat_id, message.id)
     if existing is not None:
         return existing.as_posix()
@@ -249,10 +267,24 @@ async def save_media(
 
     try:
         await client.download_media(message, file=str(target_path))
-        return relative_path.as_posix() if target_path.exists() else None
     except Exception as error:
         print(f"[Sync] Media download failed for {chat_id}/{message.id}: {error}")
         return None
+
+    if message.id is not None and db is not None and await is_message_media_removed(db, chat_id, message.id):
+        _discard_message_files(data_dir, chat_id, message.id)
+        return None
+
+    return relative_path.as_posix() if target_path.exists() else None
+
+
+def _discard_message_files(data_dir: Path, chat_id: int, message_id: int) -> None:
+    folder = data_dir / "media" / str(chat_id)
+    if not folder.is_dir():
+        return
+    for path in folder.glob(f"{message_id}.*"):
+        if path.is_file():
+            path.unlink(missing_ok=True)
 
 
 def existing_media_path(data_dir: Path, chat_id: int, message_id: int) -> Path | None:
@@ -296,9 +328,10 @@ def media_extension(message: Message) -> str:
 async def repair_saved_media(db: Database, data_dir: Path) -> None:
     rows = await db.fetchall(
         """
-        SELECT id, COALESCE(media_path, photo_path) AS media_path
+        SELECT id, media_path
         FROM messages
-        WHERE COALESCE(media_path, photo_path) IS NOT NULL
+        WHERE COALESCE(media_removed, 0) = 0
+          AND media_path IS NOT NULL
         """
     )
 
@@ -318,14 +351,13 @@ async def repair_saved_media(db: Database, data_dir: Path) -> None:
                 relative_path = new_path.relative_to(data_dir)
 
         media_path = relative_path.as_posix()
-        photo_path = media_path if media_type == "image" else None
         await db.execute(
             """
             UPDATE messages
-            SET media_path = ?, media_type = ?, photo_path = ?
+            SET media_path = ?, media_type = ?
             WHERE id = ?
             """,
-            (media_path, media_type, photo_path, row["id"]),
+            (media_path, media_type, row["id"]),
         )
 
 
@@ -383,11 +415,15 @@ async def get_user_full_fields(
 async def save_avatar(
     client: TelegramClient,
     user: User,
+    db: Database,
     data_dir: Path,
     photo_id: int | None,
 ) -> str | None:
     if photo_id is None:
-        return ""
+        return None
+
+    if await is_avatar_removed(db, user.id, photo_id):
+        return None
 
     relative_path = Path("media") / "avatars" / f"{user.id}_{photo_id}.jpg"
     target_path = data_dir / relative_path
@@ -401,10 +437,15 @@ async def save_avatar(
             file=str(target_path),
             download_big=True,
         )
-        return relative_path.as_posix() if downloaded else None
     except Exception as error:
         print(f"[Sync] Avatar download failed for {user.id}: {error}")
         return None
+
+    if await is_avatar_removed(db, user.id, photo_id):
+        target_path.unlink(missing_ok=True)
+        return None
+
+    return relative_path.as_posix() if downloaded else None
 
 
 def user_status(user: User) -> str | None:

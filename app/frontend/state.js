@@ -16,6 +16,7 @@ export const state = {
   eventsSource: null,
   avatars: [],
   isLoadingAvatars: false,
+  isDeletingMedia: false,
   lightboxGallery: [],
   lightboxIndex: -1
 };

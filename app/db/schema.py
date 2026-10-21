@@ -45,10 +45,10 @@ CREATE TABLE IF NOT EXISTS messages (
     edit_date INTEGER,
     is_deleted INTEGER DEFAULT 0,
     deleted_at INTEGER,
-    photo_path TEXT,
     media_path TEXT,
     media_type TEXT,
     media_checked INTEGER DEFAULT 0,
+    media_removed INTEGER DEFAULT 0,
     UNIQUE(telegram_id, chat_id),
     FOREIGN KEY (chat_id) REFERENCES chats(id),
     FOREIGN KEY (sender_id) REFERENCES contacts(id)
@@ -87,6 +87,11 @@ ON messages(chat_id, telegram_id);
 CREATE INDEX IF NOT EXISTS idx_messages_telegram
 ON messages(telegram_id);
 
+CREATE TABLE IF NOT EXISTS app_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+
 CREATE TABLE IF NOT EXISTS message_edits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     message_id INTEGER NOT NULL,
@@ -107,6 +112,7 @@ CREATE TABLE IF NOT EXISTS avatars (
     path TEXT NOT NULL,
     date INTEGER,
     is_current INTEGER DEFAULT 0,
+    removed INTEGER DEFAULT 0,
     created_at INTEGER,
     UNIQUE(contact_id, photo_id),
     FOREIGN KEY (contact_id) REFERENCES contacts(id)

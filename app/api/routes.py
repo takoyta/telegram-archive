@@ -17,14 +17,22 @@ from telethon.errors import (
 
 from app.db.connection import Database
 from app.db.queries import (
+    get_avatar,
     get_contact,
+    apply_removed_avatar,
+    get_message_media,
     list_chat_media,
     list_chats,
     list_contact_avatars,
     list_messages,
+    mark_avatar_removed,
+    mark_message_media_removed,
+    restore_avatar,
+    restore_message_media,
     search_chat_messages,
     search_messages,
 )
+from app.media_store import MediaDeleteError, delete_avatar_file, delete_message_files
 from app.events import format_sse
 from app.sync.common import sync_user_avatars
 from app.sync.historical import run_historical_sync
@@ -301,6 +309,54 @@ async def chat_media(
     limit: int = Query(60, ge=1, le=200),
 ) -> list[dict[str, Any]]:
     return await list_chat_media(get_db(request), chat_id, offset, limit)
+
+
+@router.delete("/messages/{message_id}/media")
+async def delete_message_media(request: Request, message_id: int) -> dict[str, bool]:
+    db = get_db(request)
+    record = await get_message_media(db, message_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+    has_media = record.get("media_path") or record.get("media_type")
+    if not has_media and not record.get("media_removed"):
+        raise HTTPException(status_code=404, detail="У сообщения нет медиа")
+
+    already_removed = bool(record.get("media_removed"))
+    await mark_message_media_removed(db, message_id)
+    try:
+        delete_message_files(request.app.state.data_dir, record)
+    except MediaDeleteError as error:
+        if not already_removed:
+            await restore_message_media(db, record)
+        raise HTTPException(
+            status_code=409,
+            detail=f"Не удалось удалить файл с диска: {error}",
+        ) from error
+
+    return {"ok": True}
+
+
+@router.delete("/avatars/{avatar_id}")
+async def delete_avatar(request: Request, avatar_id: int) -> dict[str, bool]:
+    db = get_db(request)
+    record = await get_avatar(db, avatar_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Аватар не найден")
+
+    already_removed = bool(record.get("removed"))
+    await mark_avatar_removed(db, avatar_id)
+    try:
+        delete_avatar_file(request.app.state.data_dir, record)
+    except MediaDeleteError as error:
+        if not already_removed:
+            await restore_avatar(db, record)
+        raise HTTPException(
+            status_code=409,
+            detail=f"Не удалось удалить файл с диска: {error}",
+        ) from error
+
+    await apply_removed_avatar(db, record)
+    return {"ok": True}
 
 
 @router.get("/contacts/{contact_id}")

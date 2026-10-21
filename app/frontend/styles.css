@@ -28,6 +28,22 @@ button:disabled {
   opacity: 0.6;
 }
 
+.icon-x {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  color: #e4453a;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-x:hover {
+  background: transparent;
+  color: #ff6d64;
+}
+
 .hidden {
   display: none !important;
 }
@@ -278,31 +294,19 @@ button:disabled {
   appearance: none;
 }
 
-.chat-search-clear {
+.chat-search-clear,
+.message-search-clear {
   position: absolute;
   top: 50%;
-  right: 16px;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 0;
-  border-radius: 50%;
-  padding: 0 0 4px;
-  color: #8b9bab;
-  background: transparent;
-  cursor: pointer;
   transform: translateY(-50%);
-  line-height: 1em;
-  font-size: 22px;
 }
 
-.chat-search-clear:hover {
-  color: #e9edef;
-  background: rgba(255, 255, 255, 0.08);
+.chat-search-clear {
+  right: 16px;
 }
 
-.chat-search-clear.hidden {
+.chat-search-clear.hidden,
+.message-search-clear.hidden {
   display: none;
 }
 
@@ -450,32 +454,7 @@ input:focus {
 }
 
 .message-search-clear {
-    position: absolute;
-    top: 50%;
-    right: 8px;
-    display: grid;
-    place-items: center;
-    width: 28px;
-    height: 28px;
-    border: 0;
-    border-radius: 50%;
-    padding: 0px;
-    color: #8b9bab;
-    background: transparent;
-    cursor: pointer;
-    transform: translateY(-50%);
-    line-height: 1em;
-    font-size: 22px;
-    padding-bottom: 4px;
-}
-
-.message-search-clear:hover {
-  color: #e9edef;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.message-search-clear.hidden {
-  display: none;
+  right: 8px;
 }
 
 .contact-button {
@@ -581,7 +560,23 @@ input:focus {
 }
 
 .media-item {
+  position: relative;
   min-width: 0;
+}
+
+.media-delete {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  z-index: 2;
+  font-size: 20px;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
+}
+
+.media-removed-note {
+  color: #8b9bab;
+  font-size: 13px;
+  font-style: italic;
 }
 
 .media-gallery-image {
@@ -607,6 +602,11 @@ input:focus {
   display: block;
   width: 100%;
   border-radius: 10px;
+}
+
+.media-gallery-audio {
+  height: 40px;
+  accent-color: #6ab7ff;
 }
 
 .media-gallery-video {
@@ -650,6 +650,10 @@ input:focus {
   word-break: break-word;
 }
 
+.bubble:has(.media-audio) {
+  width: min(340px, 100%);
+}
+
 .incoming .bubble {
   border-top-left-radius: 5px;
   background: #182533;
@@ -690,8 +694,10 @@ input:focus {
 
 .media-audio {
   display: block;
-  width: min(320px, 100%);
+  width: 100%;
+  height: 40px;
   margin-bottom: 6px;
+  accent-color: #6ab7ff;
 }
 
 .message-meta {
@@ -791,26 +797,46 @@ input:focus {
 .lightbox-nav {
   position: fixed;
   top: 50%;
-  transform: translateY(-50%);
   z-index: 12;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: rgba(23, 33, 43, 0.88);
-  color: #e9edef;
-  font-size: 32px;
   display: grid;
   place-items: center;
-  cursor: pointer;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  transition: background 0.15s ease, transform 0.15s ease;
+  width: 44px;
+  height: 44px;
   padding: 0;
-  line-height: 1;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.lightbox-nav::before {
+  content: "";
+  display: block;
+  width: 0;
+  height: 0;
+  border-top: 11px solid transparent;
+  border-bottom: 11px solid transparent;
+}
+
+.lightbox-prev::before {
+  border-right: 16px solid #fff;
+}
+
+.lightbox-next::before {
+  border-left: 16px solid #fff;
 }
 
 .lightbox-nav:hover {
-  background: #2f80ed;
-  transform: translateY(-50%) scale(1.08);
+  background: transparent;
+}
+
+.lightbox-prev:hover::before {
+  border-right-color: #8ec5ff;
+}
+
+.lightbox-next:hover::before {
+  border-left-color: #8ec5ff;
 }
 
 .lightbox-prev {
@@ -837,21 +863,30 @@ input:focus {
 }
 
 .contact-card {
+  display: flex;
+  flex-direction: column;
   width: min(540px, 100%);
   max-height: min(780px, 92vh);
-  overflow: auto;
+  overflow: hidden;
   border-radius: 18px;
   background: #17212b;
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.36);
 }
 
+.contact-card-body {
+  min-height: 0;
+  overflow: auto;
+}
+
 .profile-head {
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: 72px minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
   padding: 18px;
   border-bottom: 1px solid #0a121b;
+  background: #17212b;
 }
 
 .profile-avatar {
@@ -881,12 +916,7 @@ input:focus {
 }
 
 .profile-close {
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  background: #242f3d;
-  font-size: 24px;
-  line-height: 1;
+  font-size: 26px;
 }
 
 .profile-avatars {
@@ -1060,16 +1090,8 @@ input:focus {
   position: fixed;
   top: 14px;
   right: 16px;
-  width: 42px;
-  height: 42px;
-  border: 0;
-  border-radius: 50%;
-  background: rgba(23, 33, 43, 0.86);
-  color: #e9edef;
-  cursor: pointer;
-  font-size: 28px;
-  line-height: 1;
   z-index: 13;
+  font-size: 32px;
 }
 
 @media (max-width: 760px) {
