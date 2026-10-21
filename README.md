@@ -1,48 +1,50 @@
 # Telegram Archiver
 
-Локальный архиватор личных переписок Telegram.
+[English](README.md) · [Русский](README.ru.md)
 
-Приложение синхронизирует историю и новые события через Telethon, хранит сообщения в SQLite, индексирует текст через FTS5 и отдает веб-интерфейс через FastAPI.
+A local archive of private Telegram chats.
 
-![Интерфейс: список чатов, переписка и медиа](docs/interface.png)
+The app syncs history and live updates through Telethon, stores messages in SQLite, indexes text with FTS5, and serves a web interface through FastAPI.
 
-## Возможности
+![Interface: chat list, conversation, and media](docs/interface.png)
 
-- Защита чатов от потери: приложение сохраняет локальную копию переписок, даже если чат будет удален в Telegram
-- Защита сообщений от удаления: удаленные сообщения остаются доступны в локальном архиве
-- Сохранение истории редактирования сообщений
-- Защита медиафайлов от удаления: загруженные вложения сохраняются локально
-- Просмотр сообщений без отправки в Telegram отметки о прочтении
-- Поиск по архиву сообщений
-- Веб-интерфейс для просмотра чатов, контактов и истории
+## Features
 
-## Запуск через Docker
+- Chats stay available locally even if they are deleted in Telegram
+- Deleted messages remain in the local archive
+- Edit history is kept
+- Downloaded media stays on disk even if it is removed in Telegram
+- Reading the archive does not send read receipts to Telegram
+- Full-text search across the archive
+- A web interface for chats, contacts, and history
+
+## Run with Docker
 
 ```bash
 docker-compose up --build
 ```
 
-После запуска откройте:
+Then open:
 
 ```text
 http://localhost:8085
 ```
 
-## Первый вход
+## First sign-in
 
-Если Telegram client еще не настроен, приложение покажет форму входа.
+If the Telegram client is not set up yet, the app shows a sign-in form.
 
-Создайте приложение на [my.telegram.org/apps](https://my.telegram.org/apps), затем введите:
+Create an application at [my.telegram.org/apps](https://my.telegram.org/apps), then enter:
 
 - `api_id`
 - `api_hash`
-- номер телефона
-- код из Telegram
-- пароль 2FA, если включен
+- phone number
+- the code from Telegram
+- the 2FA password, if it is enabled
 
-После успешного входа синхронизация истории запустится автоматически.
+History sync starts automatically after a successful sign-in.
 
-## Локальный запуск
+## Run locally
 
 ```bash
 python -m venv .venv
@@ -51,42 +53,29 @@ pip install -r requirements.txt
 python -m app.main
 ```
 
-Интерфейс будет доступен на:
+The interface is available at:
 
 ```text
 http://localhost:8080
 ```
 
-## CLI-авторизация
+## CLI sign-in
 
-Если нужно авторизоваться без веб-интерфейса:
+To sign in without the web interface:
 
 ```bash
 docker-compose run --rm -it app python -m app.auth
 ```
 
-Локально:
+Locally:
 
 ```bash
 python -m app.auth
-```
-
-## Конфигурация
-
-Настройки по умолчанию лежат в `data/config.json`:
-
-```json
-{
-  "sync": {
-    "photos": true,
-    "photo_size": "original"
-  }
-}
 ```
 
 ## API
 
 - `GET /api/chats`
 - `GET /api/chats/{chat_id}/messages?offset=0&limit=50`
-- `GET /api/search?q=текст`
+- `GET /api/search?q=text`
 - `GET /media/{path}`

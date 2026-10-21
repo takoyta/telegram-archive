@@ -1,6 +1,5 @@
 data/*
 !data/
-!data/config.json
 *.session
 *.session-journal
 *.db
@@ -21,4 +20,6 @@ __pycache__/
 .ruff_cache/
 
 README.md
+README.ru.md
 telegram-archiver-spec.md
+telegram-archiver-spec.ru.md

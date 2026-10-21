@@ -27,7 +27,6 @@ async def run_historical_sync(
     client: TelegramClient,
     db: Database,
     data_dir: Path,
-    download_photos: bool,
     events: EventBroker,
 ) -> None:
     started_at = time.monotonic()
@@ -54,7 +53,6 @@ async def run_historical_sync(
             db,
             user,
             data_dir,
-            download_photos,
             events,
         )
         total_messages += message_count
@@ -86,7 +84,6 @@ async def sync_new_messages(
     chat_id: int,
     title: str,
     data_dir: Path,
-    download_photos: bool,
     events: EventBroker,
     min_id: int,
 ) -> tuple[int, int]:
@@ -103,7 +100,6 @@ async def sync_new_messages(
                     message,
                     chat_id,
                     data_dir,
-                    download_photos,
                 )
                 if message.id is not None:
                     max_id = message.id
@@ -132,7 +128,6 @@ async def backfill_unchecked_media(
     chat_id: int,
     title: str,
     data_dir: Path,
-    download_photos: bool,
 ) -> tuple[int, int]:
     telegram_ids = await list_unchecked_telegram_ids(db, chat_id)
     if not telegram_ids:
@@ -155,7 +150,6 @@ async def backfill_unchecked_media(
                         message,
                         chat_id,
                         data_dir,
-                        download_photos,
                     )
                     seen.add(message.id)
                     message_count += 1
@@ -174,7 +168,6 @@ async def sync_dialog(
     db: Database,
     user: User,
     data_dir: Path,
-    download_photos: bool,
     events: EventBroker,
 ) -> tuple[int, int]:
     await save_private_chat(db, user, client, data_dir)
@@ -195,7 +188,6 @@ async def sync_dialog(
         chat_id,
         title,
         data_dir,
-        download_photos,
         events,
         last_id or 0,
     )
@@ -206,7 +198,6 @@ async def sync_dialog(
         chat_id,
         title,
         data_dir,
-        download_photos,
     )
     message_count += backfill_messages
     media_count += backfill_media

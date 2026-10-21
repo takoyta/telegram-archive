@@ -26,7 +26,6 @@ def register_live_sync(
     client: TelegramClient,
     db: Database,
     data_dir: Path,
-    download_photos: bool,
     broker: EventBroker,
 ) -> None:
     @client.on(events.NewMessage(func=lambda event: event.is_private))
@@ -36,7 +35,7 @@ def register_live_sync(
             return
 
         await save_private_chat(db, chat, client, data_dir)
-        await save_message(client, db, event.message, chat.id, data_dir, download_photos)
+        await save_message(client, db, event.message, chat.id, data_dir)
         await broker.publish(
             "message_new",
             chat_id=chat.id,

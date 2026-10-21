@@ -209,7 +209,6 @@ async def save_message(
     message: Message,
     chat_id: int,
     data_dir: Path,
-    download_photos: bool,
 ) -> str | None:
     if message.id is None or message.date is None:
         return None
@@ -223,7 +222,7 @@ async def save_message(
     media_type = message_media_type(message)
     media_path = None
     removed = await is_message_media_removed(db, chat_id, message.id)
-    if download_photos and media_type is not None and not removed:
+    if media_type is not None and not removed:
         media_path = await save_media(client, message, chat_id, data_dir, media_type, db)
 
     await upsert_message(

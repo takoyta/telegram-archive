@@ -110,7 +110,6 @@ async def start_sync_if_needed(request: Request) -> None:
                 app.state.telegram_client,
                 app.state.db,
                 app.state.data_dir,
-                app.state.config.sync.photos,
                 app.state.events,
             )
         )
@@ -152,7 +151,6 @@ async def ensure_auth_client(
         app.state.telegram_client,
         app.state.db,
         app.state.data_dir,
-        app.state.config.sync.photos,
         app.state.events,
     )
     return credentials

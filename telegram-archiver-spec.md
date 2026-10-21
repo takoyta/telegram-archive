@@ -1,42 +1,44 @@
-# Telegram Archiver — Техническая спецификация
+# Telegram Archiver — Technical specification
 
-## Обзор проекта
+[English](telegram-archiver-spec.md) · [Русский](telegram-archiver-spec.ru.md)
 
-Локальный архиватор личных переписок Telegram. Сохраняет сообщения и фотографии
-в локальную БД и предоставляет браузерный интерфейс для просмотра. Отправка
-сообщений не предусмотрена.
+## Overview
 
-**Целевая среда:** Windows + WSL2 / Linux-сервер, запуск через Docker Compose.
+A local archive of private Telegram chats. It stores messages and photos in a
+local database and provides a browser interface for reading them. Sending
+messages is not supported.
+
+**Target environment:** Windows + WSL2 / a Linux server, run with Docker Compose.
 
 ---
 
-## Стек технологий
+## Stack
 
-| Слой | Технология |
+| Layer | Technology |
 |---|---|
 | Telegram API | [Telethon](https://github.com/LonamiWebs/Telethon) (MTProto, Python) |
-| База данных | SQLite с расширением FTS5 |
+| Database | SQLite with the FTS5 extension |
 | Backend API | FastAPI (Python, async) |
-| Frontend | React или Svelte (SPA) |
-| Упаковка | Docker Compose |
+| Frontend | React or Svelte (SPA) |
+| Packaging | Docker Compose |
 
-### Почему Telethon, а не Pyrogram
+### Why Telethon, not Pyrogram
 
-Оригинальный Pyrogram официально заброшен (на docs.pyrogram.org написано
-«The project is no longer maintained or supported»). Существующие форки
-(pyrotgfork, pyrofork) живые, но с неизвестным будущим. Telethon — оригинальная
-библиотека с долгой историей и активной поддержкой.
+The original Pyrogram is officially abandoned (docs.pyrogram.org says
+"The project is no longer maintained or supported"). Existing forks
+(pyrotgfork, pyrofork) are alive, but their future is unclear. Telethon is the
+original library, with a long history and active maintenance.
 
 ---
 
-## Архитектура
+## Architecture
 
 ```
 ┌──────────────────────────────────────────┐
 │              Docker Compose              │
 │                                          │
 │  ┌─────────────────────────────────────┐ │
-│  │           Python-сервис             │ │
+│  │           Python service            │ │
 │  │                                     │ │
 │  │  ┌─────────────┐  ┌──────────────┐  │ │
 │  │  │  Sync       │  │  FastAPI     │  │◄──── Browser
@@ -50,32 +52,30 @@
 └──────────────────────────────────────────┘
 ```
 
-Sync-сервис и FastAPI работают в одном Python-процессе на одном asyncio event loop.
-Это естественно для Telethon, который сам является async-библиотекой.
+The sync service and FastAPI run in one Python process on one asyncio event loop.
+That fits Telethon, which is itself an async library.
 
 ---
 
-## Структура файлов
+## File layout
 
 ```
 telegram-archiver/
 ├── docker-compose.yml
 ├── Dockerfile
-├── data/
-│   └── config.json             # Настройки по умолчанию
 ├── app/
-│   ├── main.py                 # Точка входа, запуск FastAPI + sync
+│   ├── main.py                 # Entry point, FastAPI + sync
 │   ├── sync/
-│   │   ├── historical.py       # Первичная закачка истории
-│   │   └── live.py             # Live sync через events
+│   │   ├── historical.py       # Initial history download
+│   │   └── live.py             # Live sync through events
 │   ├── db/
-│   │   ├── connection.py       # Подключение к SQLite
-│   │   ├── schema.py           # Создание таблиц
-│   │   └── queries.py          # CRUD-запросы
+│   │   ├── connection.py       # SQLite connection
+│   │   ├── schema.py           # Table creation
+│   │   └── queries.py          # CRUD queries
 │   ├── api/
 │   │   └── routes.py           # FastAPI endpoints
-│   └── frontend/               # Собранный React/Svelte SPA
-└── data/                       # Монтируется как volume
+│   └── frontend/               # Built React/Svelte SPA
+└── data/                       # Mounted as a volume
     ├── messages.db
     └── media/
         └── {chat_id}/
@@ -84,14 +84,14 @@ telegram-archiver/
 
 ---
 
-## Схема базы данных
+## Database schema
 
 ```sql
 CREATE TABLE chats (
     id          INTEGER PRIMARY KEY,   -- Telegram chat ID
     title       TEXT NOT NULL,
     username    TEXT,
-    synced_at   INTEGER                -- Unix timestamp последнего синка
+    synced_at   INTEGER                -- Unix timestamp of the last sync
 );
 
 CREATE TABLE contacts (
@@ -110,19 +110,19 @@ CREATE TABLE messages (
     text          TEXT,
     date          INTEGER NOT NULL,    -- Unix timestamp
     is_edited     BOOLEAN DEFAULT FALSE,
-    edit_date     INTEGER,             -- Unix timestamp, NULL если не редактировалось
+    edit_date     INTEGER,             -- Unix timestamp, NULL if never edited
     is_deleted    BOOLEAN DEFAULT FALSE,
-    photo_path    TEXT,                -- Относительный путь, NULL если фото нет
+    photo_path    TEXT,                -- Relative path, NULL when there is no photo
     UNIQUE(telegram_id, chat_id),
     FOREIGN KEY (chat_id) REFERENCES chats(id),
     FOREIGN KEY (sender_id) REFERENCES contacts(id)
 );
 
--- Полнотекстовый поиск
+-- Full-text search
 CREATE VIRTUAL TABLE messages_fts
     USING fts5(text, content=messages, content_rowid=id);
 
--- Триггеры для поддержания FTS в актуальном состоянии
+-- Triggers that keep FTS up to date
 CREATE TRIGGER messages_fts_insert AFTER INSERT ON messages BEGIN
     INSERT INTO messages_fts(rowid, text) VALUES (new.id, new.text);
 END;
@@ -133,7 +133,7 @@ CREATE TRIGGER messages_fts_update AFTER UPDATE ON messages BEGIN
 END;
 ```
 
-**Индексы:**
+**Indexes:**
 
 ```sql
 CREATE INDEX idx_messages_chat_date ON messages(chat_id, date DESC);
@@ -142,43 +142,34 @@ CREATE INDEX idx_messages_chat_telegram ON messages(chat_id, telegram_id);
 
 ---
 
-## Логика синхронизации
+## Sync behavior
 
-### Конфиг (`data/config.json`)
-
-```json
-{
-  "sync": {
-    "photos": true,
-    "photo_size": "original"
-  }
-}
-```
-
-Telegram client создается пользователем в стартовой форме. `api_id` и `api_hash` сохраняются локально в `data/telegram_client.json`, session-файл хранится в `data/session.session`.
+The user creates the Telegram client in the startup form. `api_id` and `api_hash`
+are stored locally in `data/telegram_client.json`. The session file is stored in
+`data/session.session`.
 
 ### Historical sync
 
-Запускается при старте. Итерирует только диалоги типа «личка» (`dialog.is_user == True`).
+Runs at startup. Iterates only private dialogs (`dialog.is_user == True`).
 
-Алгоритм для каждого чата:
+Algorithm for each chat:
 
 ```
 1. SELECT MAX(telegram_id) FROM messages WHERE chat_id = ?
-   → last_id (NULL если чат новый)
+   → last_id (NULL if the chat is new)
 
-2. client.iter_messages(chat, offset_id=last_id или 0)
-   → итерируем от новых к старым, пока не дойдём до last_id
+2. client.iter_messages(chat, offset_id=last_id or 0)
+   → walk from newest to oldest until last_id
 
-3. Для каждого сообщения:
+3. For each message:
    a. INSERT OR IGNORE INTO messages (...)
-   b. Если message.photo → скачать оригинал, сохранить путь
-   c. Лог прогресса в консоль
+   b. If message.photo → download the original and store the path
+   c. Log progress to the console
 
 4. UPDATE chats SET synced_at = now() WHERE id = ?
 ```
 
-**Обработка FloodWaitError (обязательно):**
+**FloodWaitError handling (required):**
 
 ```python
 from telethon.errors import FloodWaitError
@@ -188,84 +179,85 @@ try:
     async for message in client.iter_messages(chat):
         ...
 except FloodWaitError as e:
-    print(f"FloodWait: ждём {e.seconds} секунд")
+    print(f"FloodWait: sleeping {e.seconds} seconds")
     await asyncio.sleep(e.seconds + 5)
-    # продолжить с того же места
+    # continue from the same place
 ```
 
-**Прогресс в консоль:**
+**Console progress:**
 
 ```
-[Sync] Иван Иванов: 1500 / ~3200 сообщений...
-[Sync] Мария Сидорова: готово (842 сообщения, 34 фото)
-[Sync] Исторический синк завершён за 4м 23с
+[Sync] Ivan Ivanov: 1500 / ~3200 messages...
+[Sync] Maria Sidorova: done (842 messages, 34 photos)
+[Sync] Historical sync finished in 4m 23s
 ```
 
 ### Live sync
 
-Запускается параллельно с historical sync и API-сервером.
-Отслеживает только личные чаты.
+Runs alongside historical sync and the API server.
+It watches private chats only.
 
-**Три обработчика событий:**
+**Three event handlers:**
 
 ```python
-# Новое сообщение
+# New message
 @client.on(events.NewMessage(func=lambda e: e.is_private))
 async def on_new(event):
     # INSERT OR IGNORE INTO messages
 
-# Редактирование
+# Edit
 @client.on(events.MessageEdited(func=lambda e: e.is_private))
 async def on_edit(event):
     # UPDATE messages SET text=?, is_edited=TRUE, edit_date=?
     # WHERE telegram_id=? AND chat_id=?
 
-# Удаление
+# Deletion
 @client.on(events.MessageDeleted())
 async def on_delete(event):
     # UPDATE messages SET is_deleted=TRUE
     # WHERE telegram_id IN (event.deleted_ids)
-    # ВНИМАНИЕ: event.chat_id может быть None — искать только по telegram_id
+    # NOTE: event.chat_id may be None — match on telegram_id only
 ```
 
-> **Важно:** `MessageDeleted` не всегда содержит `chat_id`. Поле `telegram_id`
-> в разных чатах может совпадать. Если `chat_id` отсутствует — помечать все
-> записи с данным `telegram_id`, либо игнорировать событие (приемлемо).
+> **Important:** `MessageDeleted` does not always include `chat_id`. The same
+> `telegram_id` can exist in different chats. If `chat_id` is missing, mark every
+> row with that `telegram_id`, or ignore the event (acceptable).
 
 ---
 
-## Хранение фотографий
+## Photo storage
 
-Скачиваются только фотографии (`message.photo`). Остальные медиафайлы (видео,
-документы, голосовые и т.д.) не загружаются.
+Only photos are downloaded (`message.photo`). Other media (video, documents,
+voice messages, and so on) are not downloaded.
 
-Скачивается **оригинальный размер** (наибольший доступный `PhotoSize`).
+The **original size** is downloaded (the largest available `PhotoSize`).
 
-**Путь к файлу:**
+**File path:**
 
 ```
 data/media/{chat_id}/{telegram_message_id}.jpg
 ```
 
-**Запись в БД:**
+**Database value:**
 
 ```
 photo_path = "media/123456789/-1001234567/42.jpg"
 ```
 
-Путь хранится относительным — чтобы не зависеть от места монтирования тома.
+The path is stored relative to the data directory, so it does not depend on
+where the volume is mounted.
 
 ---
 
 ## API (FastAPI)
 
-Минимальный набор эндпоинтов для фронтенда:
+The minimum set of endpoints for the frontend:
 
 ```
-GET  /api/chats                  — список всех чатов
-GET  /api/chats/{id}/messages    — сообщения чата (пагинация: ?offset=0&limit=50)
-GET  /api/search?q=текст         — полнотекстовый поиск по FTS5
-GET  /media/{path}               — отдача файлов фотографий
+GET  /api/chats                  — list of all chats
+GET  /api/chats/{id}/messages    — chat messages (pagination: ?offset=0&limit=50)
+GET  /api/search?q=text          — full-text search through FTS5
+GET  /media/{path}               — serve photo files
 GET  /                           — SPA (index.html)
 ```
 
@@ -280,7 +272,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/app/data   # БД и фото персистентны
+      - ./data:/app/data   # Database and photos persist
     restart: unless-stopped
 ```
 
@@ -296,33 +288,33 @@ CMD ["python", "-m", "app.main"]
 
 ---
 
-## Безопасность и важные замечания
+## Security notes
 
-**Session-файл (`data/*.session`)** — содержит авторизацию в аккаунт Telegram.
-Обращаться как с паролем: не коммитить в git, бэкапить отдельно.
+**The session file (`data/*.session`)** contains authorization for the Telegram
+account. Treat it like a password: do not commit it, and back it up separately.
 
-**`.gitignore` обязательно должен включать:**
+**`.gitignore` must include:**
 
 ```
 data/*
 !data/
-!data/config.json
 *.session
 ```
 
-**API credentials** (`api_id`, `api_hash`) получить на [my.telegram.org](https://my.telegram.org).
-При первом запуске Telethon запросит номер телефона и код подтверждения в консоли.
+**API credentials** (`api_id`, `api_hash`) come from [my.telegram.org](https://my.telegram.org).
+On the first launch Telethon asks for the phone number and the confirmation code
+in the console.
 
 ---
 
-## Первый запуск
+## First launch
 
 ```bash
-# Клонировать репо
+# Clone the repo
 docker compose up
 
-# В консоли появится запрос:
+# The console asks:
 # Enter phone number: +7XXXXXXXXXX
 # Enter code: 12345
-# После этого session сохранится в data/ и повторная авторизация не нужна
+# The session is then stored in data/ and sign-in is not required again
 ```
